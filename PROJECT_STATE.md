@@ -308,6 +308,33 @@
 
 **目录迁移进度：6/7 批（86%）**
 
+## 最新变更 (2026-05-27 14:10)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `dashboard.py` → `utils/dashboard.py` | **目录迁移** — 第七批：剩余文件归位 | ✅ |
+| `visualization.py` → `utils/visualization.py` | 同上 | ✅ |
+| `sync_portfolio.py` → `utils/sync_portfolio.py` | 同上 | ✅ |
+| `healthcheck.py` → `tests/healthcheck.py` | 同上 | ✅ |
+| `test_data_quality.py` → `tests/test_data_quality.py` | 同上 | ✅ |
+| `migrate_to_mysql.py` | **保留** 根目录（一次性脚本） | ✅ |
+| `stock_analysis_api.py` stub | **修复** 显式导出 _curl_text 保证 test_data_quality 可用 | ✅ |
+
+**目录迁移进度：7/7 批（100%）✅**
+
+## 目录迁移完成状态
+
+| 目录 | 包含文件 | 状态 |
+|------|---------|------|
+| 根目录 | `main.py` `web_server.py` `migrate_to_mysql.py` + 39个 stub | 3个真身 + stub 向后兼容 |
+| `utils/` | dao, data_store, data_parser, stock_analysis_api, strategy, fundamental, sector_history, alert_system, dashboard, visualization, sync_portfolio, data_validator | 12个工具类 |
+| `core/fetcher/` | daily_fetch, fetch_all_stocks_daily, limit_up_analysis, news_fetcher, fetch_sector_ths, batch_fetch_limitup, _fetch_*, _fill_*, backtest_candidates* | 15个采集/回测 |
+| `core/analyzer/` | scorer, daily_pick, daily_pick_v2, close_task, pick_react | 5个分析模块 |
+| `core/reporter/` | morning_check, morning_auction_check, intraday_monitor, _report_gen, close_report_tpl | 5个报告模块 |
+| `tests/` | preflight, check_engineering, healthcheck, test_data_quality, data_reconciliation | 5个测试/门禁 |
+
+所有 stub 保持向后兼容，新旧 import 均可正常工作。
+
 ## 最新变更 (2026-05-27 14:00)
 
 | 文件 | 改动内容 | 状态 |
