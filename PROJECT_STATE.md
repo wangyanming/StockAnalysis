@@ -347,4 +347,29 @@
 | `utils/data_validator.py` | 已存在（上轮新增） | ✅ |
 | `tests/data_reconciliation.py` | 已存在（上轮新增） | ✅ |
 
+## 开发流程门禁体系
+
+### 三层门禁
+
+| 层次 | 工具 | 时机 | 作用 |
+|------|------|------|------|
+| **前置检查** | OpenClaw hook `dev-flow` | 消息入口 | 检测开发需求关键词 → 检查文档是否就绪 → 缺失则提醒 |
+| **改前自检** | AGENTS.md 规则 + engineering-rules 3.4 节 | 开始写代码前 | AI 口头过 6 条清单 → 确认后再动代码 |
+| **改后校验** | git hook `pre-commit` | 提交时 | 强制跑 check_engineering.sh → 不通过阻止提交 |
+
+### 改前自检 6 条（AI 写代码前必须口头确认）
+
+```
+✅ [确认] 需求范围是否明确？影响哪些文件？验收标准是什么？
+✅ [文档] docs/requirements/ 下是否有匹配的需求文档？无 → 先生成
+✅ [文档] docs/design/ 下是否有方案设计？复杂改动无 → 先生成
+✅ [状态] PROJECT_STATE.md 是否已读？当前项目状态是否清晰？
+✅ [规范] skills/engineering-rules/SKILL.md 是否已读？最新版本？
+✅ [改后] 改完后是否会跑 tests/check_engineering.sh？
+```
+
+**规则：** 检查未通过前，禁止写任何代码。
+
+---
+
 **目录迁移策略**：真身迁到 `utils/`，根目录 stub 文件保留 `from utils.xxx import *`，旧代码 import 不受影响。新代码统一走 `from utils.xxx import` 路径。
