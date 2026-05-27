@@ -791,8 +791,18 @@ def daily_close_task() -> str:
     # 昨日选股
     yesterday_picks = _load_yesterday_picks(trade_date)
 
-    # ReAct
-    react_data = _build_react_data(trade_date, yesterday_picks)
+    # ReAct（完整三闭环：Observe→Thought→Act）
+    try:
+        from core.analyzer.pick_react import run_react_analysis
+        react_text = run_react_analysis(check_date=trade_date)
+        logger.info(f'ReAct 三闭环分析完成')
+    except Exception as e:
+        logger.warning(f'ReAct 分析异常，回退到简版: {e}')
+        react_text = ''
+    
+    if not react_text:
+        # fallback: 简版统计
+        react_data = _build_react_data(trade_date, yesterday_picks)
 
     # 明日候选
     picks_data = _build_picks_data(trade_date, [])
@@ -821,7 +831,7 @@ def daily_close_task() -> str:
             'down_count': len(dt_board),
         },
         'yesterday_picks': yesterday_picks if isinstance(yesterday_picks, list) else [],
-        'react_report': react_data,
+        'react_report': react_text or react_data,
         'picks': picks_data,
         'positions': position_data,
     }

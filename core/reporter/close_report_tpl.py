@@ -244,9 +244,13 @@ def render_report(data: dict) -> str:
         parts.append(f"📊 汇总：上涨{up}只 / 下跌{down}只 胜率{win_rate:.0f}%")
         parts.append("─" * 30)
     
-    # ReAct复盘
-    rr = d.get('react_report', {})
-    if rr:
+    # ReAct复盘（兼容两种模式：字符串=新三闭环，dict=旧简版）
+    rr = d.get('react_report', '')
+    if isinstance(rr, str) and rr:
+        # 新模式：pick_react.run_react_analysis() 返回的文本段落
+        parts.append(rr)
+    elif isinstance(rr, dict) and rr:
+        # 旧模式 fallback：_build_react_data() 返回的 dict
         parts.append(f"📊 ReAct复盘 (选股{rr.get('pick_date', '')} → 检验{rr.get('check_date', '')})")
         parts.append(f"精选{rr.get('total_count', 0)}只 · 胜率{rr.get('win_rate', 0):.0f}% · 均涨幅+{rr.get('avg_return', 0):.2f}%")
         parts.append(f"最大盈利+{rr.get('max_gain', 0):.2f}% · 最大亏损{rr.get('max_loss', 0):.2f}%")
