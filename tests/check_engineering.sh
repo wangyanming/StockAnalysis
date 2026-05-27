@@ -14,7 +14,7 @@ echo "========================================"
 
 # ─── 1️⃣ 检查PROJECT_STATE.md是否要更新 ───
 echo ""
-echo "📋 1/4 检查文档是否需要更新..."
+echo "📋 1/6 检查文档是否需要更新..."
 
 GIT_CHANGED=$(cd "$BASE" && git diff --name-only HEAD 2>/dev/null || true)
 if [ -z "$GIT_CHANGED" ]; then
@@ -66,9 +66,44 @@ else
     echo "   ⏭️  无git变更记录，跳过文档检查"
 fi
 
-# ─── 2️⃣ 检查SQL中MySQL保留字使用 ───
+# ─── 2️⃣ 检查函数行数超限 ───
 echo ""
-echo "🗄️  2/4 检查MySQL保留字字段..."
+echo "📏 2/6 检查函数长度（>80行告警）..."
+cd "$BASE"
+OVERLONG=$(python3 -c "
+import ast, os, sys
+long_funcs = []
+for root, dirs, files in os.walk('.'):
+    dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('__pycache__', 'logs', 'data', 'venv', '.git')]
+    for f in files:
+        if not f.endswith('.py'): continue
+        path = os.path.join(root, f)
+        try:
+            with open(path) as fh:
+                tree = ast.parse(fh.read())
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    first = node.body[0].lineno if node.body else 0
+                    last = node.body[-1].lineno if node.body else 0
+                    lines = last - first + 1
+                    if lines > 80:
+                        long_funcs.append(f'{path}:{node.name}() = {lines}行')
+        except: pass
+if long_funcs:
+    print('|'.join(long_funcs))
+" 2>/dev/null || true)
+if [ -n "$OVERLONG" ]; then
+    COUNT=$(echo "$OVERLONG" | tr '|' '\n' | wc -l | tr -d ' ')
+    echo "    ⚠️  发现 ${COUNT} 个函数超长(>80行):"
+    echo "    (仅提示，不阻止提交；建议逐步重构拆分)"
+    echo "$OVERLONG" | tr '|' '\n' | sed 's/^/      → /'
+else
+    echo "   ✅ 全部函数行长正常"
+fi
+
+# ─── 3️⃣ 检查SQL中MySQL保留字使用 ───
+echo ""
+echo "🗄️  3/6 检查MySQL保留字字段..."
 RESERVED_WORDS="rank|order|group|key|index|primary|unique|status|type|value|count|select|from|where|position|action|date|time|name|comment|level"
 FOUND_FIELDS=$(grep -rn "INSERT.*INTO\|insert_or_ignore\|INSERT IGNORE\|REPLACE INTO" "$BASE" --include='*.py' 2>/dev/null | grep -o "'[a-z_][a-z_]*'" | tr -d "'" | sort -u | grep -iE "$RESERVED_WORDS" || true)
 if [ -n "$FOUND_FIELDS" ]; then
@@ -81,9 +116,9 @@ else
     echo "   ✅ 字段名安全"
 fi
 
-# ─── 3️⃣ 运行preflight ───
+# ─── 4️⃣ 运行preflight ───
 echo ""
-echo "🧪 3/4 运行预检脚本..."
+echo "🧪 4/6 运行预检脚本..."
 if [ -f "$BASE/tests/preflight.sh" ]; then
     STOCK_DB_URL="${STOCK_DB_URL:-mysql://root:stock123@127.0.0.1:3306/stock_analysis}" \
         bash "$BASE/tests/preflight.sh" || { FAIL=1; echo "   ❌ 预检失败"; }
@@ -91,9 +126,9 @@ else
     echo "   ⏭️  preflight.sh 不存在，跳过"
 fi
 
-# ─── 4️⃣ 检查数据一致性（如果指定了） ───
+# ─── 5️⃣ 检查数据一致性（如果指定了） ───
 echo ""
-echo "📊 4/4 数据一致性检查..."
+echo "📊 5/6 数据一致性检查..."
 cd "$BASE"
 if python3 -c "from dao import get_db; db=get_db(); print('DB OK')" 2>/dev/null; then
     echo "   ✅ 数据库连接正常"

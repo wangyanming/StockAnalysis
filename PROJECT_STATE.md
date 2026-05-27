@@ -244,3 +244,16 @@
 | `tests/check_engineering.sh` | **优化** — scorer.py 文档检查改为检测评分逻辑变更才强制，格式修复不阻止 | ✅ |
 | 空 except 修复 | **修复** — 全项目15处 `except:` → `except Exception:` | ✅ |
 | 采集文件单位注释 | **新增** — 10个采集文件顶部注明数据源单位转换 | ✅ |
+
+## 最新变更 (2026-05-27 14:00)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `dao.py` → `utils/dao.py` | **目录迁移** — 真身迁到 utils，根目录保留 stub 向后兼容 | ✅ |
+| `data_parser.py` → `utils/data_parser.py` | **目录迁移** — 同上模式 | ✅ |
+| `data_store.py` → `utils/data_store.py` | **目录迁移** — 同上模式 | ✅ |
+| `tests/check_engineering.sh` | **增强** — 新增函数长度检测（>80行提示）、段号统一 | ✅ |
+| `utils/data_validator.py` | 已存在（上轮新增） | ✅ |
+| `tests/data_reconciliation.py` | 已存在（上轮新增） | ✅ |
+
+**目录迁移策略**：真身迁到 `utils/`，根目录 stub 文件保留 `from utils.xxx import *`，旧代码 import 不受影响。新代码统一走 `from utils.xxx import` 路径。
