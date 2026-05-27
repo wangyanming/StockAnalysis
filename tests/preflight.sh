@@ -30,7 +30,7 @@ echo ""
 echo "🔌 2/4 数据库连接..."
 if STOCK_DB_URL='mysql://root:stock123@127.0.0.1:3306/stock_analysis' python3 -c "
 import sys; sys.path.insert(0, '.')
-from dao import get_db
+from utils.dao import get_db
 db = get_db()
 r = db.fetchone('SELECT COUNT(*) as c FROM stock_daily')
 print(f'   ✅ 连接成功, stock_daily: {r[\"c\"]} 条')
@@ -49,7 +49,7 @@ MISSING=0
 for tbl in $TABLES; do
     if ! STOCK_DB_URL='mysql://root:stock123@127.0.0.1:3306/stock_analysis' python3 -c "
 import sys; sys.path.insert(0, '.')
-from dao import get_db
+from utils.dao import get_db
 db = get_db()
 db.fetchone('SELECT 1 FROM $tbl LIMIT 1')
 " 2>/dev/null; then
@@ -66,13 +66,13 @@ echo ""
 echo "📦 4/4 模块导入检查..."
 python3 -c "
 import sys; sys.path.insert(0, '.')
-from data_store import QuoteStore
-from limit_up_analysis import LimitUpAnalyzer
-from scorer import build_candidate_pool
-from daily_fetch import fetch_all
-from close_task import daily_close_task
-from fetch_sector_ths import ensure_table
-from sector_history import ensure_table as se
+from utils.data_store import QuoteStore
+from core.fetcher.limit_up_analysis import LimitUpAnalyzer
+from core.analyzer.scorer import build_candidate_pool
+from core.fetcher.daily_fetch import fetch_all
+from core.analyzer.close_task import daily_close_task
+from core.fetcher.fetch_sector_ths import ensure_table
+from utils.sector_history import ensure_table as se
 print('   ✅ 全部模块导入成功')
 " 2>/dev/null
 
