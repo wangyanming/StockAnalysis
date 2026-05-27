@@ -5,8 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import akshare as ak
-from dao import get_db
-from fetch_all_stocks_daily import batch_fetch, show_stats
+from utils.dao import get_db
+from core.fetcher.fetch_all_stocks_daily import batch_fetch, show_stats
 
 df = ak.index_stock_cons_csindex(symbol='000905')
 stocks = [{'code': str(r['成分券代码']).zfill(6), 'name': str(r['成分券名称'])} for _, r in df.iterrows()]

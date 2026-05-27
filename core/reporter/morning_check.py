@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def format_market_overview(sections: list):
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
 
     # 找到最近一个交易日（跳过周末/节假日）：查 sector_performance 最晚的 record_date
@@ -182,7 +182,7 @@ def format_news_compact(sections: list):
     lines = []
 
     try:
-        from news_fetcher import _fetch_ths_news, _fetch_cls_news, _merge_news
+        from core.fetcher.news_fetcher import _fetch_ths_news, _fetch_cls_news, _merge_news
         merged = _merge_news(_fetch_ths_news(), _fetch_cls_news(), 20)
 
         # 对短标题加emoji标签
@@ -243,7 +243,7 @@ def format_news_compact(sections: list):
 def format_today_picks(sections: list):
     sections.append("**4️⃣ 今日策略提醒**")
 
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
 
     # 从 daily_picks 表获取最新交易日选股结果

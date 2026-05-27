@@ -37,9 +37,9 @@ def fetch_all(do_stock_daily: bool = False):
     Args:
         do_stock_daily: 是否执行个股日K增量更新（15:10太快不跑，17:00/18:30跑）
     """
-    from stock_analysis_api import StockDataFetcher
-    from data_store import QuoteStore
-    from limit_up_analysis import LimitUpAnalyzer
+    from utils.stock_analysis_api import StockDataFetcher
+    from utils.data_store import QuoteStore
+    from core.fetcher.limit_up_analysis import LimitUpAnalyzer
     
     t0 = time.time()
     f = StockDataFetcher()
@@ -74,7 +74,7 @@ def fetch_all(do_stock_daily: bool = False):
                 df = ak.stock_board_industry_summary_ths()
                 if df is not None and not df.empty and '涨跌幅' in df.columns:
                     now_str = datetime.now().strftime('%H:%M:%S')
-                    from dao import get_db as _get_db
+                    from utils.dao import get_db as _get_db
                     _db = _get_db()
                     
                     sql = '''INSERT IGNORE INTO sector_performance
@@ -145,7 +145,7 @@ def fetch_all(do_stock_daily: bool = False):
         today_dt = datetime.now().strftime('%Y%m%d')
         df_down = ak.stock_zt_pool_dtgc_em(date=today_dt)
         if df_down is not None and not df_down.empty:
-            from dao import get_db as _get_db
+            from utils.dao import get_db as _get_db
             _db = _get_db()
             saved_down = 0
             for _, r in df_down.iterrows():
@@ -189,7 +189,7 @@ def fetch_all(do_stock_daily: bool = False):
     if do_stock_daily:
         logger.info("增量更新个股日K...")
         try:
-            from fetch_all_stocks_daily import daily_incremental_update
+            from core.fetcher.fetch_all_stocks_daily import daily_incremental_update
             inserted = daily_incremental_update(sleep_sec=0.3)
             results['stock_daily'] = f'+{inserted}条'
         except Exception as e:

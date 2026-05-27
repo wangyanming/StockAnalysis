@@ -27,7 +27,7 @@ import time
 import re
 import subprocess
 
-from fundamental import get_latest_financial, evaluate_fundamental, get_risk_flags
+from utils.fundamental import get_latest_financial, evaluate_fundamental, get_risk_flags
 
 # ─── 权重配置（从 JSON 读取） ───
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -123,7 +123,7 @@ def _get_today_quote_from_db(code: str) -> dict:
     返回格式与 fetch_sina_quote 一致。
     """
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
         row = db.fetchone('''
@@ -156,7 +156,7 @@ def check_market_status() -> Dict:
 
     result = {'status': '正常', 'score': 80, 'sh_change': 0, 'reason': ''}
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today_dash = datetime.now().strftime('%Y-%m-%d')
         row = db.fetchone(
@@ -205,7 +205,7 @@ def score_chip_structure(code: str, name: str, q: dict) -> Tuple[int, list]:
     details = []
 
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
 
@@ -302,7 +302,7 @@ def score_momentum(code: str, name: str, q: dict) -> Tuple[int, list]:
     details = []
 
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
 
@@ -426,7 +426,7 @@ def score_sector_environment(code: str, name: str) -> Tuple[int, list]:
     details = []
 
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
 
@@ -514,7 +514,7 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     details = []
 
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
 
@@ -696,7 +696,7 @@ def score_market_safety(market: dict) -> Tuple[int, list]:
 
     # 加分：板块活跃度高
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')
         cnt = db.fetchone(
@@ -727,7 +727,7 @@ def build_candidate_pool(today_up: list = None) -> List[Dict]:
     candidates = []
     seen = set()
 
-    from dao import get_db
+    from utils.dao import get_db
     today = datetime.now().strftime('%Y%m%d')
     db = get_db()
 
@@ -812,7 +812,7 @@ def _score_position_in_range(code: str, q: dict) -> int:
         return 0
     
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         cur = db.execute(
             "SELECT MIN(low) as min_l, MAX(high) as max_h FROM stock_daily "

@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, SCRIPT_DIR)
 
-from dao import get_db
+from utils.dao import get_db
 
 
 def get_today():

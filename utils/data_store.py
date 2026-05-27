@@ -9,7 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from dao import get_db
+from utils.dao import get_db
 db = get_db()
 
 

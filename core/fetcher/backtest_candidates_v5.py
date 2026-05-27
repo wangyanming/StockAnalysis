@@ -6,7 +6,7 @@
 import json
 from collections import defaultdict, Counter
 
-from dao import get_db
+from utils.dao import get_db
 
 DB_PATH = 'os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))/stock_data.db'
 INPUT_PATH = 'os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))/backtest_candidates_v3.json'

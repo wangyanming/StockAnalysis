@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
-from dao import get_db
+from utils.dao import get_db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)

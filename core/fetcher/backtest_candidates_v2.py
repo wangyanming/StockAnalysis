@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from collections import defaultdict
 
-from dao import get_db
+from utils.dao import get_db
 
 def main():
     db = get_db()

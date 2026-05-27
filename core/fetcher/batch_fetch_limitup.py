@@ -9,8 +9,8 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from dao import get_db
-from limit_up_analysis import LimitUpAnalyzer
+from utils.dao import get_db
+from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 
 logging.basicConfig(
     level=logging.INFO,

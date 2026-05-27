@@ -19,16 +19,16 @@ logger = logging.getLogger(__name__)
 os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.getcwd())
 
-from data_store import QuoteStore, get_connection
-from limit_up_analysis import LimitUpAnalyzer
-from scorer import check_market_status, score_candidate, format_score_report
+from utils.data_store import QuoteStore, get_connection
+from core.fetcher.limit_up_analysis import LimitUpAnalyzer
+from core.analyzer.scorer import check_market_status, score_candidate, format_score_report
 
 
 def pick_stocks_v2():
     """
     新版选股逻辑：涨停发现热点 → 基本面筛选 → 综合评分 → 风险过滤
     """
-    from scorer import fetch_sina_quote
+    from core.analyzer.scorer import fetch_sina_quote
 
     store = QuoteStore()
     zt = LimitUpAnalyzer()
@@ -96,7 +96,7 @@ def pick_stocks_v2():
     if today_up:
         up_codes_set = {str(s.get('code', '')) for s in today_up}
 
-    from dao import get_db as _get_db
+    from utils.dao import get_db as _get_db
     db_pool = _get_db()
     today_str = datetime.now().strftime('%Y%m%d')
     check = db_pool.fetchone('SELECT COUNT(*) as c FROM stock_daily WHERE trade_date=%s', (today_str,))
@@ -108,7 +108,7 @@ def pick_stocks_v2():
     def _fill_name(code, name):
         if name:
             return name
-        from dao import get_db
+        from utils.dao import get_db
         _db2 = get_db()
         r = _db2.fetchone('SELECT name FROM stock_daily WHERE code=%s AND name!="" ORDER BY trade_date DESC LIMIT 1', (code,))
         return r['name'] if r else name
@@ -192,7 +192,7 @@ def pick_stocks_v2():
     # 7. 补查候选股补充信息
     logger.info("  补查候选股补充信息...")
     try:
-        from dao import get_db as _get_db2
+        from utils.dao import get_db as _get_db2
         _db2 = _get_db2()
         _today_str2 = datetime.now().strftime('%Y%m%d')
         _five_days_ago = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
@@ -247,7 +247,7 @@ def pick_stocks_v2():
     # ── ⚡ 涨停回踩组 ──
     # 条件：近5日首板涨停 → 今日未涨停 → 缩量回踩不破起涨点
     try:
-        from dao import get_db as _get_db3
+        from utils.dao import get_db as _get_db3
         _db3 = _get_db3()
         up_group = []
         for r in scored:
@@ -345,7 +345,7 @@ def pick_stocks_v2():
         ma5 = r.get('_ma5', 0)
         close_now = r.get('today_close', 0)
         if not close_now:
-            from dao import get_db
+            from utils.dao import get_db
             _dx = get_db()
             _qx = _dx.fetchone('SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
             close_now = _qx['close'] if _qx else 0
@@ -556,7 +556,7 @@ def format_v2_report(results: dict) -> str:
 
 def _save_picks_to_db(results: dict):
     """将选股结果保存到数据库"""
-    from dao import get_db
+    from utils.dao import get_db
     try:
         db = get_db()
         today = datetime.now().strftime('%Y%m%d')

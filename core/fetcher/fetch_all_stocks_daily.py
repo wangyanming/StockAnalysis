@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from dao import get_db
+from utils.dao import get_db
 DB = get_db()
 
 
@@ -451,7 +451,7 @@ def _fix_exright_change_pct(today: str):
     - 用新浪查昨收重新计算
     - 偏差 > 3% 即覆盖
     """
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
 
     # 找出今天涨跌幅异常的主板股（排除科创/创业板自身涨跌幅上限20%）
@@ -737,7 +737,7 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
     logger.info(f'📡 开始腾讯实时行情采集({today})...')
 
     # 获取全A股代码列表
-    from dao import get_db as _get_db
+    from utils.dao import get_db as _get_db
     _db = _get_db()
     rows = _db.fetchall('SELECT DISTINCT code FROM stock_daily')
     all_codes = [r['code'] for r in rows]

@@ -4,8 +4,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dao import get_db
-from fetch_all_stocks_daily import get_hs300_stocks, batch_fetch
+from utils.dao import get_db
+from core.fetcher.fetch_all_stocks_daily import get_hs300_stocks, batch_fetch
 
 stocks = get_hs300_stocks()
 

@@ -3,7 +3,7 @@
 """
 import sys, json, urllib.request
 import os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from dao import get_db
+from utils.dao import get_db
 from datetime import datetime, timedelta
 
 db = get_db()

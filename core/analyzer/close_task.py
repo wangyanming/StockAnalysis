@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # 关掉 INFO 日志（避免混入 print 输出）
 logging.getLogger().setLevel(logging.WARNING)
 
-from dao import get_db
+from utils.dao import get_db
 _db = get_db()
 
 
@@ -338,7 +338,7 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
     构建明日候选数据（调用 daily_pick_v2 的结果，从外部API补全换手/封板）
     返回 data['picks'] 字典
     """
-    from daily_pick_v2 import pick_stocks_v2, _save_picks_to_db
+    from core.analyzer.daily_pick_v2 import pick_stocks_v2, _save_picks_to_db
     
     # 关闭 INFO 日志
     import logging as _lg
@@ -569,7 +569,7 @@ def _build_react_data(trade_date: str, yesterday_picks: list) -> dict:
         })
         
         # 评分分组 + 推荐分组
-        from dao import get_db
+        from utils.dao import get_db
         try:
             db = get_db()
             yest_date = db.fetchone(
@@ -623,7 +623,7 @@ def _build_react_data(trade_date: str, yesterday_picks: list) -> dict:
     
     # --- 近一周统计 ---
     try:
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         week_ago = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
         rows = db.fetchall(
@@ -827,7 +827,7 @@ def daily_close_task() -> str:
     }
 
     # 渲染
-    from close_report_tpl import render_report
+    from core.reporter.close_report_tpl import render_report
     report = render_report(data)
     print(report)
     

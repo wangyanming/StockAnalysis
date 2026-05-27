@@ -21,7 +21,7 @@ def _get_market_summary_cached():
     now = time.time()
     if _market_summary_cache is not None and now - _market_summary_cache_time < 30:
         return _market_summary_cache
-    from stock_analysis_api import StockDataFetcher
+    from utils.stock_analysis_api import StockDataFetcher
     f = StockDataFetcher()
     try:
         ms = f.get_market_summary()
@@ -29,7 +29,7 @@ def _get_market_summary_cached():
             logger.info(f'盘中实时涨跌家数: 涨{ms["up_count"]} 跌{ms["down_count"]}')
             # 成交额实时拿不到时填补昨天数据
             if ms.get('total_amount', 0) == 0:
-                from dao import get_db
+                from utils.dao import get_db
                 db = get_db()
                 yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
                 sp = db.fetchone("SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'", (yesterday,))
@@ -82,7 +82,7 @@ def fetch_realtime_market_summary() -> dict:
     except Exception as e:
         logger.warning(f'实时市场汇总获取失败: {e}')
     # 回退：从 sector_performance 取昨日数据
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     sp = db.fetchone(
@@ -103,7 +103,7 @@ def fetch_amount_total_realtime() -> dict:
     ms = fetch_realtime_market_summary()
     total_yi = ms.get('total_yi', 0)
     # 前日比较
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     sp = db.fetchone(
@@ -118,7 +118,7 @@ def fetch_news_compact(max_items: int = 6) -> list:
     """获取精炼新闻（同花顺+财联社）"""
     lines = []
     try:
-        from news_fetcher import _fetch_ths_news, _fetch_cls_news, _merge_news
+        from core.fetcher.news_fetcher import _fetch_ths_news, _fetch_cls_news, _merge_news
         merged = _merge_news(_fetch_ths_news(), _fetch_cls_news(), 20)
         tags = [
             (r'特朗普|拜登|美国|会谈|关税|贸易|制裁|访华', '🇨🇳🇺🇸'),
@@ -251,7 +251,7 @@ def run():
     total_value = 0
     pos_rows = []
 
-    from dao import get_db
+    from utils.dao import get_db
     _db = get_db()
     positions = _db.fetchall("SELECT * FROM portfolio_positions")
 

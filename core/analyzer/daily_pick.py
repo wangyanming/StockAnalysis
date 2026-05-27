@@ -17,9 +17,9 @@ sys.path.insert(0, os.getcwd())
 
 def pick_stocks():
     """选股主逻辑：业绩增长+技术面+板块热点"""
-    from stock_analysis_api import StockDataFetcher
-    from data_store import QuoteStore
-    from limit_up_analysis import LimitUpAnalyzer
+    from utils.stock_analysis_api import StockDataFetcher
+    from utils.data_store import QuoteStore
+    from core.fetcher.limit_up_analysis import LimitUpAnalyzer
     
     f = StockDataFetcher()
     store = QuoteStore()

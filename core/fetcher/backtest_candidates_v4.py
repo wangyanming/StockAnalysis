@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from collections import defaultdict, Counter
 
-from dao import get_db
+from utils.dao import get_db
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE_PATH = os.path.join(PROJECT_ROOT, 'kline_cache.json')
@@ -19,13 +19,13 @@ OUTPUT_PATH = os.path.join(PROJECT_ROOT, 'backtest_candidates_v4.json')
 sys.path.insert(0, PROJECT_ROOT)
 os.chdir(PROJECT_ROOT)
 
-from scorer import (
+from core.analyzer.scorer import (
     fetch_sina_quote,
     check_market_status,
     get_sector_hot_score,
     tech_score_via_sina,
 )
-from fundamental import get_latest_financial, evaluate_fundamental
+from utils.fundamental import get_latest_financial, evaluate_fundamental
 
 def _normalize_code(code: str) -> str:
     code = code.strip()

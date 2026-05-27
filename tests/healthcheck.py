@@ -13,7 +13,7 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['STOCK_DB_URL'] = 'mysql://root:stock123@127.0.0.1:3306/stock_analysis'
 
-from dao import get_db
+from utils.dao import get_db
 db = get_db()
 
 today = datetime.now().strftime("%Y%m%d")
@@ -55,7 +55,7 @@ else:
     check("市场成交额存在", False, "今日无成交额数据")
 
 # 5. 涨停数据
-from limit_up_analysis import LimitUpAnalyzer
+from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 a = LimitUpAnalyzer()
 zt = a.get_today_limit_up(today)
 check("涨停数据非空", len(zt) > 0, f"今日{len(zt)}只")
@@ -65,7 +65,7 @@ if len(zt) > 0:
     check("涨停封板时间正常", True, f"{zt_ok}只有效封板时间/共{len(zt)}只")
 
 # 6. 板块表现
-from data_store import QuoteStore
+from utils.data_store import QuoteStore
 store = QuoteStore()
 perf = store.get_sector_performances(today_dash)
 check("板块表现非空", len(perf) > 0, f"今日{len(perf)}条")

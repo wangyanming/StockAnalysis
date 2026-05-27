@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
-from stock_analysis_api import StockDataFetcher, _curl_text
+from utils.stock_analysis_api import StockDataFetcher, _curl_text
 
 FAILURES = []
 PASSED = 0
@@ -119,7 +119,7 @@ def main():
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     try:
-        from dao import get_db
+        from utils.dao import get_db
         _db = get_db()
         row = _db.fetchone(
             "SELECT SUM(rise_count) as rise, SUM(fall_count) as fall FROM sector_performance WHERE record_date=%s AND rank_type='all'",

@@ -22,7 +22,7 @@ sys.path.insert(0, PROJECT_ROOT)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-from dao import get_db
+from utils.dao import get_db
 
 # ─── 配置 ─────────────────────────────────────────────
 

@@ -217,7 +217,7 @@ def run():
     lines.append('')
 
     # ── 1. 读取昨日选股候选 ──
-    from dao import get_db
+    from utils.dao import get_db
     db = get_db()
 
     # 最近一次有选股记录的交易日

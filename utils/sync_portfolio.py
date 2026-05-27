@@ -21,7 +21,7 @@
 import sys, os, json
 from datetime import datetime, date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dao import get_db
+from utils.dao import get_db
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POSITIONS_FILE = os.path.expanduser('~/.openclaw/workspace/POSITIONS.md')

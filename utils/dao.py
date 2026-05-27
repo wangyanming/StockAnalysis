@@ -3,7 +3,7 @@
 默认连接 MySQL，不再支持 SQLite。
 
 使用方式:
-    from dao import get_db, DB
+    from utils.dao import get_db, DB
     db = get_db()
 
 环境变量:

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _get_store():
     """延迟导入并返回 QuoteStore 实例"""
-    from data_store import QuoteStore
+    from utils.data_store import QuoteStore
     return QuoteStore()
 
 
@@ -365,7 +365,7 @@ class StockDataFetcher:
         """获取行业板块实时行情"""
         try:
             # 优先从 sector_daily_history 表拉最新数据
-            from dao import get_db
+            from utils.dao import get_db
             db = get_db()
             last_date_r = db.fetchone('SELECT MAX(trade_date) as max_d FROM sector_daily_history')
             last_date = last_date_r['max_d'] if last_date_r else None
@@ -695,7 +695,7 @@ class StockDataFetcher:
         从 sector_performance 表汇总市场数据（涨跌家数、成交额、前日对比）。
         保留原有方法签名兼容之前的使用方。
         """
-        from dao import get_db
+        from utils.dao import get_db
         db = get_db()
         # 统一为 YYYY-MM-DD 格式
         raw = date_str or datetime.now().strftime('%Y%m%d')
