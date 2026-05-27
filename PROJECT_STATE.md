@@ -245,6 +245,18 @@
 | 空 except 修复 | **修复** — 全项目15处 `except:` → `except Exception:` | ✅ |
 | 采集文件单位注释 | **新增** — 10个采集文件顶部注明数据源单位转换 | ✅ |
 
+## 最新变更 (2026-05-27 14:30)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `stock_analysis_api.py` → `utils/stock_analysis_api.py` | **目录迁移** — N+批迁移，工具箱:工具库 | ✅ |
+| `strategy.py` → `utils/strategy.py` | 同上 | ✅ |
+| `fundamental.py` → `utils/fundamental.py` | 同上 | ✅ |
+| `sector_history.py` → `utils/sector_history.py` | 同上 | ✅ |
+| `alert_system.py` → `utils/alert_system.py` | 同上 | ✅ |
+
+**目录迁移进度：2/7 批（29%）**
+
 ## 最新变更 (2026-05-27 14:00)
 
 | 文件 | 改动内容 | 状态 |
