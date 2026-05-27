@@ -280,6 +280,18 @@
 
 **目录迁移进度：4/7 批（57%）**
 
+## 最新变更 (2026-05-27 14:05)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `morning_check.py` → `core/reporter/morning_check.py` | **目录迁移** — 第五批：报告模块 | ✅ |
+| `morning_auction_check.py` → `core/reporter/morning_auction_check.py` | 同上；路径修复 PROJECT_ROOT 3层 dirname | ✅ |
+| `intraday_monitor.py` → `core/reporter/intraday_monitor.py` | 同上 | ✅ |
+| `_report_gen.py` → `core/reporter/_report_gen.py` | 同上（模块级DB查询，跳过stub验证） | ✅ |
+| `close_report_tpl.py` → `core/reporter/close_report_tpl.py` | 同上（纯模版层，无依赖） | ✅ |
+
+**目录迁移进度：5/7 批（71%）**
+
 ## 最新变更 (2026-05-27 14:00)
 
 | 文件 | 改动内容 | 状态 |
