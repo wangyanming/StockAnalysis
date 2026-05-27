@@ -255,7 +255,18 @@
 | `sector_history.py` → `utils/sector_history.py` | 同上 | ✅ |
 | `alert_system.py` → `utils/alert_system.py` | 同上 | ✅ |
 
-**目录迁移进度：2/7 批（29%）**
+**目录迁移进度：3/7 批（43%）**
+
+## 最新变更 (2026-05-27 13:46)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `daily_fetch.py` → `core/fetcher/daily_fetch.py` | **目录迁移** — 第三批：采集模块 | ✅ |
+| `fetch_all_stocks_daily.py` → `core/fetcher/fetch_all_stocks_daily.py` | 同上 | ✅ |
+| `limit_up_analysis.py` → `core/fetcher/limit_up_analysis.py` | 同上 | ✅ |
+| `news_fetcher.py` → `core/fetcher/news_fetcher.py` | 同上 | ✅ |
+| `fetch_sector_ths.py` → `core/fetcher/fetch_sector_ths.py` | 同上 | ✅ |
+| `batch_fetch_limitup.py` → `core/fetcher/batch_fetch_limitup.py` | 同上 | ✅ |
 
 ## 最新变更 (2026-05-27 14:00)
 
