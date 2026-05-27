@@ -373,3 +373,11 @@
 ---
 
 **目录迁移策略**：真身迁到 `utils/`，根目录 stub 文件保留 `from utils.xxx import *`，旧代码 import 不受影响。新代码统一走 `from utils.xxx import` 路径。
+
+### 2026-05-27
+
+#### 今日变更
+- **ReAct三闭环集成**：close_task.py 调用 pick_react.run_react_analysis() 替代 _build_react_data()，observe_log 表写入完整
+- **预检修复**：preflight.sh 中 7 处 import 路径从旧路径（from dao/data_store 等）改为新路径（from utils.xxx / core.xxx）
+- **ReAct 需求文档+方案设计**：docs/requirements/REQ-20260527-02-ReAct三闭环集成.md + docs/design/DES-20260527-02-ReAct三闭环集成.md
+
