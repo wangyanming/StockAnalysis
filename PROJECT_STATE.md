@@ -272,6 +272,18 @@
 
 | 文件 | 改动内容 | 状态 |
 |------|---------|------|
+| `scorer.py` → `core/analyzer/scorer.py` | **目录迁移** — 第四批：分析模块 | ✅ |
+| `daily_pick.py` → `core/analyzer/daily_pick.py` | 同上；路径修复：sys.path→项目根目录 | ✅ |
+| `daily_pick_v2.py` → `core/analyzer/daily_pick_v2.py` | 同上 | ✅ |
+| `close_task.py` → `core/analyzer/close_task.py` | 同上 | ✅ |
+| `pick_react.py` → `core/analyzer/pick_react.py` | 同上 | ✅ |
+
+**目录迁移进度：4/7 批（57%）**
+
+## 最新变更 (2026-05-27 14:00)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
 | `dao.py` → `utils/dao.py` | **目录迁移** — 真身迁到 utils，根目录保留 stub 向后兼容 | ✅ |
 | `data_parser.py` → `utils/data_parser.py` | **目录迁移** — 同上模式 | ✅ |
 | `data_store.py` → `utils/data_store.py` | **目录迁移** — 同上模式 | ✅ |
