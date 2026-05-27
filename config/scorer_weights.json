@@ -1,0 +1,18 @@
+{
+  "version": "5.5",
+  "weights": {
+    "chip_structure": 25,
+    "momentum": 25,
+    "sector_environment": 20,
+    "trend_position": 20,
+    "market_safety": 10,
+    "position_bonus": 15,
+    "risk_penalty": 15
+  },
+  "thresholds": {
+    "sell_overload_days": 3,
+    "consecutive_up_threshold": 7,
+    "momentum_effective_threshold": 10
+  },
+  "active_since": "2026-05-26"
+}

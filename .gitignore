@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Project specific
+stock_data.db
+*.db
+*.db-journal
+*.db-wal
+*.bak
+cache/
+web_server.pid
+kline_cache.json
+watchlist.json
+daily_picks.json
+daily_picks_v2.json
+daily_top5.json
+backtest_*_output.json
+backtest_*_v*.json
+closing_review_*.txt
+*.pid
