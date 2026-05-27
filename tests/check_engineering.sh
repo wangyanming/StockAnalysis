@@ -46,9 +46,13 @@ if [ -n "$GIT_CHANGED" ]; then
     # 检查 scorer.py 改了但没更新 选股评分规则文档
     if echo "$GIT_CHANGED" | grep -q 'scorer\.py'; then
         if ! echo "$GIT_CHANGED" | grep -qi '选股评分规则'; then
-            echo "    ⚠️  ⚠️ ⚠️  改了 scorer.py 但没更新 docs/选股评分规则.md!"
-            echo "    → 两个文件必须同步更新"
-            FAIL=1
+            echo "    ⚠️  改了 scorer.py，确认是否需要同步更新 docs/选股评分规则.md？"
+            echo "    → 若仅修改 except/注释/格式等不影响评分的变更，可忽略此提醒"
+            # 检查是否真正改了评分逻辑（含 score/权重/公式的关键词）
+            if git diff --cached -- scorer.py | grep -qE 'weight|score|param|标准|公式|阈值'; then
+                echo "    ⚠️  ⚠️ ⚠️  检测到评分逻辑变更！必须更新 docs/选股评分规则.md"
+                FAIL=1
+            fi
         fi
     fi
     

@@ -238,3 +238,9 @@
 | `skills/design-doc/` | **新增** — 方案设计 skill + 模板 | ✅ |
 | `docs/requirements/` | **新建** — 需求文档存档目录 | ✅ |
 | `docs/design/` | **新建** — 方案设计存档目录 | ✅ |
+| `utils/data_validator.py` | **新增** — 数据校验工具类（单位/非空/范围/时效性） | ✅ |
+| `tests/data_reconciliation.py` | **新增** — 每日数据对账脚本（核心表最新日期/数据量/过期检查） | ✅ |
+| `configs/` `core/` `data/` `logs/` `utils/` | **新建** — 按目标结构创建空目录 | ✅ |
+| `tests/check_engineering.sh` | **优化** — scorer.py 文档检查改为检测评分逻辑变更才强制，格式修复不阻止 | ✅ |
+| 空 except 修复 | **修复** — 全项目15处 `except:` → `except Exception:` | ✅ |
+| 采集文件单位注释 | **新增** — 10个采集文件顶部注明数据源单位转换 | ✅ |
