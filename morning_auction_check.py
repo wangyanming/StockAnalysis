@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-9:26 集合竞价检查脚本
-从 daily_picks 取昨日候选股（is_pick=1），拉实时开盘价+竞价数据，分析竞价强弱给出操作建议
+09:26 集合竞价检查
+数据源：
+  新浪实时行情(9:25后): 开盘价=元, volume(竞价量)=手(x100->股)
+  买卖盘口: 委买/委卖价=元, 挂单量=手(x100->股)
 """
 
 import sys, os, json, logging, re, urllib.request
@@ -195,7 +197,7 @@ def run():
             idx = fetch_index(code)
             arrow = '🟢' if idx['change_pct'] >= 0 else '🔴'
             idx_parts.append(f'{arrow} {name} {idx["change_pct"]:+.2f}%')
-        except:
+        except Exception:
             idx_parts.append(f'⚠️ {name}')
     lines.append(f'  {" / ".join(idx_parts)}')
 
@@ -210,7 +212,7 @@ def run():
             lines.append('  🟢 大盘高开，环境偏暖')
         elif sh['change_pct'] > 1.0:
             lines.append('  🚀 大盘高开>1%，环境强势')
-    except:
+    except Exception:
         pass
     lines.append('')
 
@@ -232,7 +234,7 @@ def run():
     try:
         dt = datetime.strptime(trade_date, '%Y%m%d')
         label = f'{dt.month}/{dt.day}'
-    except:
+    except Exception:
         label = trade_date
 
     # 获取候选股：is_pick=1（精选推荐）+ rank<=5（评分最高）并集，去重

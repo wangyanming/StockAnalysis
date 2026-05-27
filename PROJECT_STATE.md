@@ -234,3 +234,7 @@
 | `.git/hooks/pre-commit` | **新建** — 后置校验：提交前强制跑 `check_engineering.sh`，不通过阻止提交 | ✅ |
 | `morning_check.py` | 修复 `format_today_picks()` 取 `is_pick=1` 精选推荐（之前取 `rank<=5` 与收盘复盘不一致） | ✅ |
 | `morning_auction_check.py` | **新增** — 集合竞价检查脚本（09:26 cron） | ✅ |
+| `skills/requirement-doc/` | **新增** — 需求文档 skill + 模板 | ✅ |
+| `skills/design-doc/` | **新增** — 方案设计 skill + 模板 | ✅ |
+| `docs/requirements/` | **新建** — 需求文档存档目录 | ✅ |
+| `docs/design/` | **新建** — 方案设计存档目录 | ✅ |

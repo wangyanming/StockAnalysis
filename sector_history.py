@@ -1,8 +1,11 @@
 """
-板块历史数据补全脚本
-从东方财富拉取所有行业板块的日K线数据，补全 sector_daily_history 表
-用于分析板块轮动的阈值（涨幅分布、成交额分布等）
+板块历史K线数据采集
+数据源：AKShare stock_board_industry_hist_em
+  close/open/high/low=元
+  volume=手(x100->股)
+  amount=元
 """
+
 import json
 import time
 import urllib.request
@@ -150,7 +153,7 @@ def get_board_name(code: str) -> str:
             item = list(diff.values())[0]
             return item.get("f14", code)
         return code
-    except:
+    except Exception:
         return code
 
 

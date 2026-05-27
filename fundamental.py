@@ -1,6 +1,11 @@
 """
 财务数据获取模块 - 从AKShare获取股票基本面数据
+数据源：AKShare stock_financial_abstract
+  营收/净利润=元
+  市盈率/市净率=倍
+  每股收益=元
 """
+
 import akshare as ak
 import pandas as pd
 import logging
@@ -50,7 +55,7 @@ def get_latest_financial(code: str) -> Optional[Dict]:
                     data = json.load(f)
                     if data.get('_ts', 0) > time.time() - 14400:
                         return data.get('_result')
-            except:
+            except Exception:
                 pass
     
     try:
@@ -115,7 +120,7 @@ def extract_key_metrics(raw: Dict) -> Dict:
             return None
         try:
             return float(v)
-        except:
+        except Exception:
             return None
     
     return {

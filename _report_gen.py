@@ -45,7 +45,7 @@ try:
             req2 = urllib.request.Request(url2, headers={'Referer': 'https://finance.sina.com.cn'})
             # 没有历史数据接口，用上次大盘快照或者接近值
             prev_amt_yi = prev_amt / 1e8 / 10000  # 行业汇总太离谱，备用
-        except:
+        except Exception:
             prev_amt_yi = 0
         print(f"成交额={total_amount_yi:.0f}亿 = {total_amount_yi/100:.2f}万亿")
         print(f"前日(行业汇总)={prev_amt_yi:.2f}万亿")

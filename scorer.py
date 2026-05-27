@@ -322,7 +322,7 @@ def score_momentum(code: str, name: str, q: dict) -> Tuple[int, list]:
                 'FROM daily_limit_up WHERE code=%s AND trade_date=%s', (code, today))
             if up_info and up_info['turnover_rate']:
                 turnover_rate = float(up_info['turnover_rate'])
-        except:
+        except Exception:
             pass
 
         # ① 换手率判断（12分）
@@ -704,7 +704,7 @@ def score_market_safety(market: dict) -> Tuple[int, list]:
         if cnt and int(cnt['cnt']) >= 5:
             score += 3
             details.append(f'{cnt["cnt"]}个行业有涨停(+3)')
-    except:
+    except Exception:
         pass
 
     score = min(score, 10)

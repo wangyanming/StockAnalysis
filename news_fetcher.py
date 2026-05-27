@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-晨间快讯采集 — 用于盘前检查的昨晚及今日早间要闻摘要
+新闻采集模块
 数据源（按优先级）：
-  1️⃣ 同花顺快讯（news.10jqka.com.cn）— 实时盘面异动、板块涨跌、涨停分析
-  2️⃣ 财联社快讯（cls.cn/telegraph）— 盘面背景、政策解读、行业深度
+  1. 同花顺快讯（实时行情/板块异动）
+  2. 财联社电报（消息面/政策深度）
 """
 
 import sys, os, json, logging, re, requests
@@ -36,7 +36,7 @@ def _fetch_ths_news() -> list:
             if seq.isdigit() and len(seq) >= 10:
                 try:
                     ts = datetime.fromtimestamp(int(seq[:10])).strftime('%H:%M')
-                except:
+                except Exception:
                     pass
             # 去重去空
             if not title:

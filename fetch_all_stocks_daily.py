@@ -1,13 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-个股日K历史数据拉取脚本
-建表 + 全量/增量拉取，默认先拉沪深300验证
-数据源：腾讯接口 (proxy.finance.qq.com) — 稳定、不受交易日限制
+全量个股K线采集（腾讯日K接口）
+数据源：腾讯行情 proxy.finance.qq.com
+  close/open/high/low=元
+  volume=手(x100->股)
+  amount=万元(x10000->元)
+  change_pct=百分比
+"""
 
-腾讯日K接口字段说明（len=10）：
-  [0]=日期  [1]=开盘  [2]=收盘  [3]=最高  [4]=最低
-  [5]=volume(手/主板, 股/科创北交)  [6]=空格对象(跳过)
-  [7]=涨跌幅(%) 直接使用  [8]=amount(万元)  [9]=空
-"""
 import os
 import sys
 import time

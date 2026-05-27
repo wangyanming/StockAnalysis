@@ -70,7 +70,7 @@ def fetch_kline_range(codes: list, datalen: int = 10) -> dict:
                 
                 kline_cache[code] = result
                 time.sleep(0.15)
-            except:
+            except Exception:
                 kline_cache[code] = {}
         
         with open(CACHE_PATH, 'w') as f:

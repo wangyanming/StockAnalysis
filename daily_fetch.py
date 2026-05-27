@@ -1,7 +1,12 @@
 """
 每日定时数据采集脚本
 每天 15:10 盘中快照, 18:30 收盘后完整拉取（含个股日K增量）
+数据源：同花顺板块(90行业) + 东财涨停 + 腾讯日K
+  同花顺：涨跌点数/涨跌幅 百分比单位
+  东财涨停：价格=元, 封单量=手(x100->股), 成交额=元
+  腾讯日K：close/open/high/low=元, volume=手(x100->股), amount=万元(x10000->元)
 """
+
 import sys
 import os
 import time
@@ -169,7 +174,7 @@ def fetch_all(do_stock_daily: bool = False):
                     pass
             try:
                 _db.commit()
-            except:
+            except Exception:
                 pass  # 已启用 autocommit，无需显式 commit
             logger.info(f"跌停数据入库: {saved_down}条")
             results['limit_down'] = f'{saved_down}只'

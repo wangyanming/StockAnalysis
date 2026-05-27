@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-盘中监控脚本 — 按固定四段模版输出：
-  1️⃣ 大盘概况（实时指数+涨跌家数+成交额+同比）
-  2️⃣ 今日市场动态（新闻精选）
-  3️⃣ 持仓监控（从MySQL portfolio_positions 表读取）
-  4️⃣ 操作提醒
+盘中监控模块（固定三段输出）
+数据源：
+  新浪实时行情: 价格=元, volume=手(x100->股), amount=元
+  新浪指数: 点数/涨跌幅
 """
 
 import sys, os, json, logging, re, time
@@ -206,7 +205,7 @@ def run():
             idx = fetch_index(code)
             arrow = '🟢' if idx['change_pct'] >= 0 else '🔴'
             idx_parts.append(f'{arrow} {name} {idx["change_pct"]:+.2f}%')
-        except:
+        except Exception:
             idx_parts.append(f'⚠️ {name}')
     lines.append(f'  {" / ".join(idx_parts)}')
 
@@ -221,7 +220,7 @@ def run():
         cy = fetch_index('399006')
         if cy['change_pct'] < -1.5:
             risks.append('⚠️ 创业板跌超1.5%，题材股风险偏大')
-    except:
+    except Exception:
         pass
     if risks:
         lines.append(f'  {"；".join(risks)}')

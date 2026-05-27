@@ -1,6 +1,11 @@
 """
-涨停分析模块 - 获取、存储、分析涨停板数据
+涨停数据采集模块（三重备份：AKShare -> 东财HTTP -> 新浪分页）
+数据源：
+  AKShare stock_zt_pool_em: 价格=元,封单量=手(x100->股),封单资金=元
+  东财HTTP: 价格=元,封单=手(x100->股),成交额=元
+  新浪分页: 价格=元
 """
+
 import os
 import json
 from dao import get_db

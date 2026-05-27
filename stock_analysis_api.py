@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 数据获取模块 - 基于新浪财经 API + AKShare 的股票数据获取
+数据源：
+  新浪实时行情: 价格=元, volume=手(x100->股), amount=元
+  新浪指数: 点数/涨跌幅
+  AKShare 同花顺板块: 涨跌幅=百分比
 """
+
 import json
 import time
 import os
