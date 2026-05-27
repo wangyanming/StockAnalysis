@@ -24,9 +24,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 切换到项目目录
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.getcwd())
+# 切换到项目根目录
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_script_dir))  # core/fetcher -> core -> 项目根
+os.chdir(_project_root)
+sys.path.insert(0, _project_root)
 
 # 默认使用 MySQL（无环境变量时兜底）
 if 'STOCK_DB_URL' not in os.environ:

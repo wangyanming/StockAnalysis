@@ -5,7 +5,8 @@
 - **路径**: `/Users/wangyanming/workspace/StockAnalysis/`
 - **数据库**: MySQL `mysql://root:stock123@127.0.0.1:3306/stock_analysis`
 - **预检**: `bash tests/preflight.sh`
-- **数据检查**: `STOCK_DB_URL='mysql://root:stock123@127.0.0.1:3306/stock_analysis' python3 healthcheck.py`
+- **API校验**: `python3 tests/api_validation.py`
+- **数据对账**: `python3 tests/data_reconciliation.py`
 
 ## 当前阶段：MySQL迁移完成 ✓
 
@@ -96,7 +97,7 @@
   - 涨停在资金接力维度仅按换手/封板质量计分，不再在多个维度叠加
   - `scorer.py`、`daily_pick_v2.py`、`docs/选股评分规则.md`、`tests/preflight.sh` 同步更新
   - 预检通过 ✅
-- [ ] 优化 healthcheck.py 阈值（根据生产数据调整）
+- [ ] ~~优化 healthcheck.py 阈值~~（已废弃，被 data_reconciliation.py 覆盖）
 - [ ] backtest_candidates_v3.py / v5.py / batch_fetch_limitup.py 仍有硬编码stock_data.db引用，需清理
 - [ ] backtest_candidates*.py 回测脚本查 daily_limit_up 未过滤status='跌停'，需统一加过滤条件
 
@@ -315,10 +316,10 @@
 | `dashboard.py` → `utils/dashboard.py` | **目录迁移** — 第七批：剩余文件归位 | ✅ |
 | `visualization.py` → `utils/visualization.py` | 同上 | ✅ |
 | `sync_portfolio.py` → `utils/sync_portfolio.py` | 同上 | ✅ |
-| `healthcheck.py` → `tests/healthcheck.py` | 同上 | ✅ |
-| `test_data_quality.py` → `tests/test_data_quality.py` | 同上 | ✅ |
+| `healthcheck.py` → `tests/healthcheck.py` | **目录迁移后废弃** — 被 data_reconciliation.py 覆盖，已删除 | ✅ |
+| `test_data_quality.py` → `tests/test_data_quality.py` | **目录迁移后重命名** — → `tests/api_validation.py`，用于API数据格式/单位校验 | ✅ |
 | `migrate_to_mysql.py` | **保留** 根目录（一次性脚本） | ✅ |
-| `stock_analysis_api.py` stub | **修复** 显式导出 _curl_text 保证 test_data_quality 可用 | ✅ |
+| `stock_analysis_api.py` stub | **修复** 显式导出 _curl_text 保证 api_validation 可用 | ✅ |
 
 **目录迁移进度：7/7 批（100%）✅**
 
@@ -331,7 +332,7 @@
 | `core/fetcher/` | daily_fetch, fetch_all_stocks_daily, limit_up_analysis, news_fetcher, fetch_sector_ths, batch_fetch_limitup, _fetch_*, _fill_*, backtest_candidates* | 15个采集/回测 |
 | `core/analyzer/` | scorer, daily_pick, daily_pick_v2, close_task, pick_react | 5个分析模块 |
 | `core/reporter/` | morning_check, morning_auction_check, intraday_monitor, _report_gen, close_report_tpl | 5个报告模块 |
-| `tests/` | preflight, check_engineering, healthcheck, test_data_quality, data_reconciliation | 5个测试/门禁 |
+| `tests/` | preflight, check_engineering, api_validation, data_reconciliation | 4个测试/门禁 |
 
 所有 stub 保持向后兼容，新旧 import 均可正常工作。
 

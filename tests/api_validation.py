@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-数据质量测试脚本
-每次开发完新功能/迭代后执行此脚本验证数据完整性
+API数据校验 — 验证外部数据源返回的数据格式/单位/范围符合预期
 
-用法: python3 test_data_quality.py
+执行: python3 tests/api_validation.py
+场景: 新增采集模块或更换API后执行
 """
 import json
 import sys
