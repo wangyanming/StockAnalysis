@@ -296,6 +296,22 @@
 
 | 文件 | 改动内容 | 状态 |
 |------|---------|------|
+| `_fetch_all_remain.py` → `core/fetcher/` | **目录迁移** — 第六批：采集辅助+回测 | ✅ |
+| `_fetch_csi500.py` → `core/fetcher/` | 同上 | ✅ |
+| `_fill_csi500.py` → `core/fetcher/` | 同上 | ✅ |
+| `_fill_missing.py` → `core/fetcher/` | 同上 | ✅ |
+| `backtest_candidates.py` → `core/fetcher/` | 同上 | ✅ |
+| `backtest_candidates_v2.py` → `core/fetcher/` | 同上 | ✅ |
+| `backtest_candidates_v3.py` → `core/fetcher/` | 同上 | ✅ |
+| `backtest_candidates_v4.py` → `core/fetcher/` | 同上；修复硬编码路径、PROJECT_ROOT 顺序 | ✅ |
+| `backtest_candidates_v5.py` → `core/fetcher/` | 同上 | ✅ |
+
+**目录迁移进度：6/7 批（86%）**
+
+## 最新变更 (2026-05-27 14:00)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
 | `dao.py` → `utils/dao.py` | **目录迁移** — 真身迁到 utils，根目录保留 stub 向后兼容 | ✅ |
 | `data_parser.py` → `utils/data_parser.py` | **目录迁移** — 同上模式 | ✅ |
 | `data_store.py` → `utils/data_store.py` | **目录迁移** — 同上模式 | ✅ |

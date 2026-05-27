@@ -1,27 +1,6 @@
-#!/usr/bin/env python3
-"""拉取中证500成分股日K"""
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-import akshare as ak
-from dao import get_db
-from fetch_all_stocks_daily import batch_fetch, show_stats
-
-# 拿中证500成分股
-df = ak.index_stock_cons_csindex(symbol='000905')
-stocks = []
-for _, row in df.iterrows():
-    code = str(row['成分券代码']).strip().zfill(6)
-    name = str(row['成分券名称']).strip()
-    stocks.append({'code': code, 'name': name})
-
-# 过滤已拉取的
-db = get_db()
-have = set(r[0] for r in db.execute('SELECT DISTINCT code FROM stock_daily').fetchall())
-
-missing = [s for s in stocks if s['code'] not in have]
-print(f'中证500: {len(stocks)}只, 其中{len(have & set(s["code"] for s in stocks))}只已拉取, 需拉{len(missing)}只')
-
-batch_fetch(missing, '20240101', '20260511', sleep_sec=0.8)
-show_stats()
+"""
+_fetch_csi500 — 已迁移到 core/fetcher/_fetch_csi500.py
+此文件为向后兼容的 stub，新代码请改用：
+    from core.fetcher._fetch_csi500 import
+"""
+from core.fetcher._fetch_csi500 import *  # noqa: F401, F403
