@@ -14,6 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils.dao import get_db
 import akshare as ak
 
+# 日志落盘
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_log_dir = os.path.join(_project_root, "logs")
+if not os.path.exists(_log_dir):
+    os.makedirs(_log_dir, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     datefmt="%Y-%m-%d %H:%M:%S",
