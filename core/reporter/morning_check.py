@@ -11,6 +11,11 @@
 import sys, os, json, logging, re
 from datetime import datetime, timedelta
 
+# 确保项目根目录在 sys.path 中，使得 from utils.dao 等导入可用
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
