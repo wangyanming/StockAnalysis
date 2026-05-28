@@ -8,7 +8,15 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
-## 当前阶段：MySQL迁移完成 ✓
+## 当前阶段：QA Subagent 构建完成 ✓
+
+## 新增模块
+| 模块 | 路径 | 说明 | 状态 |
+|------|------|------|------|
+| QA Subagent | `skills/qa-subagent/SKILL.md` | 独立质量验证agent | ✅ 2026-05-28 |
+| 工程规范第11节 | `skills/engineering-rules/SKILL.md` | QA验证流程 | ✅ 2026-05-28 |
+| git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ✅ 2026-05-28 |
+| QA日志目录 | `logs/qa/` | 测试报告持久化 | ✅ 2026-05-28 |
 
 ## 已改文件 (2026-05-28)
 

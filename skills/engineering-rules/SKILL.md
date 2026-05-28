@@ -212,7 +212,36 @@ StockAnalysis/
 
 ---
 
-## 文档更新约定（速查表）
+## 11. QA 验证规范
+
+### 11.1 提测时机
+所有非 trivial 的代码改动，必须通过 QA subagent 验证后才能提交 git。
+
+### 11.2 trivial 例外清单（不需要提 QA）
+- 仅改注释/文档/README
+- 仅改工程规范 SKILL.md 自身
+- 仅更新 PROJECT_STATE.md / MEMORY.md
+- 仅改非代码文件（配置、模板等）
+- 仅改 `.gitignore` / README / LICENSE
+
+### 11.3 QA 工作流
+
+```
+开发完成 → 主 agent 创建 .qa_pending → sessions_spawn QA subagent →
+  QA 执行验证 → 输出测试报告 →
+    ✅ 通过: 删除 .qa_pending → 允许提交 git
+    ❌ 不通过: 打回附根因 → 主 agent 修复 → 重新提测
+```
+
+### 11.4 QA 结论处理
+- ✅ 通过 → 开发者可以提交 git
+- ❌ 不通过 → 开发者修复后重新提测
+- QA 有否决权，测试不通过不能提交
+
+### 11.5 QA Subagent 所在路径
+`skills/qa-subagent/SKILL.md`
+
+## 12. 文档更新约定（速查表）
 
 | 场景 | 需更新文件 |
 |------|-----------|
