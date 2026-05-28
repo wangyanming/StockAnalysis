@@ -866,4 +866,12 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
     logger.info(f'  成功: {total_ok} 失败: {total_fail}')
     logger.info(f'  总耗时: {elapsed_total:.1f}s = {elapsed_total/60:.1f}分钟')
     logger.info(f'{"="*50}')
+    # 补全选股记录的次日涨跌幅
+    try:
+        from core.analyzer.pick_react import update_feedback
+        feedback_cnt = update_feedback(today)
+        logger.info(f'补全选股次日涨跌幅: {feedback_cnt} 条')
+    except Exception as e:
+        logger.warning(f'补全选股次日涨跌幅失败: {e}')
+
     return total_ok

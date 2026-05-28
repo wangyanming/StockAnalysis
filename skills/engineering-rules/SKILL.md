@@ -218,11 +218,12 @@ StockAnalysis/
 所有非 trivial 的代码改动，必须通过 QA subagent 验证后才能提交 git。
 
 ### 11.2 trivial 例外清单（不需要提 QA）
-- 仅改注释/文档/README
+以下情况不需要提 QA，其他任何改动都必须走 QA 验证：
+- 仅改注释/文档/README（不含逻辑代码）
 - 仅改工程规范 SKILL.md 自身
-- 仅更新 PROJECT_STATE.md / MEMORY.md
-- 仅改非代码文件（配置、模板等）
-- 仅改 `.gitignore` / README / LICENSE
+- 仅更新非代码文件：`.gitignore`、`LICENSE`
+
+**改了 .py 文件的一律走 QA，没有例外。**
 
 ### 11.3 QA 工作流
 

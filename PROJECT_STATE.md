@@ -18,6 +18,12 @@
 | git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ✅ 2026-05-28 |
 | QA日志目录 | `logs/qa/` | 测试报告持久化 | ✅ 2026-05-28 |
 
+## 本次改动
+| 文件 | 改动 | 状态 |
+|------|------|------|
+| `core/fetcher/fetch_all_stocks_daily.py` | 末尾加update_feedback调用，采集完自动补全次日涨跌幅 | 🔄 待提交 |
+| `skills/engineering-rules/SKILL.md` | 收窄trivial例外清单（改.py一律走QA） | 🔄 待提交 |
+
 ## 已改文件 (2026-05-28)
 
 | 文件 | 改动内容 | 状态 |
