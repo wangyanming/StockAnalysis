@@ -13,7 +13,14 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(_log_dir, "daily_pick_v2.log"))
+    ]
+)
 logger = logging.getLogger(__name__)
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

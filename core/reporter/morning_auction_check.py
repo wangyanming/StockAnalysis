@@ -7,10 +7,23 @@
   买卖盘口: 委买/委卖价=元, 挂单量=手(x100->股)
 """
 
-import sys, os, json, logging, re, urllib.request
+import sys, os, json, logging, re
+# 确保项目根目录在 sys.path + 日志落盘
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_log_dir = os.path.join(_project_root, "logs")
+if not os.path.exists(_log_dir):
+    os.makedirs(_log_dir, exist_ok=True), urllib.request
 from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s [%(levelname)s] %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(_log_dir, "morning_auction_check.log"))
+    ]
+)
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

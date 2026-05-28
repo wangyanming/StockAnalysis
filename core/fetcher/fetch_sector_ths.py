@@ -16,8 +16,11 @@ import akshare as ak
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(_log_dir, "fetch_sector_ths.log"))
+    ]
 )
 logger = logging.getLogger(__name__)
 

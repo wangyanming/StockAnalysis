@@ -14,8 +14,11 @@ from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(_log_dir, "batch_fetch_limitup.log"))
+    ]
 )
 logger = logging.getLogger(__name__)
 

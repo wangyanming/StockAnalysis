@@ -845,6 +845,16 @@ def daily_close_task() -> str:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+    _log_dir = os.path.join(PROJECT_ROOT, "logs")
+    if not os.path.exists(_log_dir):
+        os.makedirs(_log_dir, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(os.path.join(_log_dir, "close_task.log"))
+        ]
+    )
     result = daily_close_task()
     print(f"[OK] 收盘复盘完成", file=sys.stderr)
