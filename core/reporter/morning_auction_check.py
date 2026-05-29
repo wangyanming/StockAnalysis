@@ -8,11 +8,12 @@
 """
 
 import sys, os, json, logging, re
+import urllib.request
 # 确保项目根目录在 sys.path + 日志落盘
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _log_dir = os.path.join(_project_root, "logs")
 if not os.path.exists(_log_dir):
-    os.makedirs(_log_dir, exist_ok=True), urllib.request
+    os.makedirs(_log_dir, exist_ok=True)
 from datetime import datetime, timedelta
 
 logging.basicConfig(
@@ -250,25 +251,12 @@ def run():
     except Exception:
         label = trade_date
 
-    # 获取候选股：is_pick=1（精选推荐）+ rank<=5（评分最高）并集，去重
+    # 获取候选股：仅取 is_pick=1（复盘推送的精选推荐），与复盘报告保持一致
     cur = db.execute(
         'SELECT code, name, total_score, highlights, data_tag, is_pick, `rank` FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
         (trade_date,))
     picks = cur.fetchall()
-
-    # 再加 rank<=5 的补全
-    seen_codes = set(p['code'].strip() for p in picks)
-    cur2 = db.execute(
-        'SELECT code, name, total_score, highlights, data_tag, is_pick, `rank` FROM daily_picks WHERE trade_date=%s AND `rank`<=5 ORDER BY `rank`',
-        (trade_date,))
-    for r in cur2.fetchall():
-        c = r['code'].strip()
-        if c not in seen_codes:
-            seen_codes.add(c)
-            picks.append(r)
-
-    # 按 rank 排序
-    picks.sort(key=lambda x: x['rank'] if x['rank'] else 99)
+    cur.close()
 
     if not picks:
         lines.append('⚠️ 昨日无候选股数据')

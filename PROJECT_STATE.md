@@ -402,3 +402,12 @@
 - **预检修复**：preflight.sh 中 7 处 import 路径从旧路径（from dao/data_store 等）改为新路径（from utils.xxx / core.xxx）
 - **ReAct 需求文档+方案设计**：docs/requirements/REQ-20260527-02-ReAct三闭环集成.md + docs/design/DES-20260527-02-ReAct三闭环集成.md
 
+### 2026-05-29
+
+#### 今日变更
+- **修复3处import bug（commit 6b67c4a遗留）**：
+  - `core/fetcher/news_fetcher.py`: `import requests` 错写成 `os.makedirs(...), requests`
+  - `core/reporter/morning_auction_check.py`: `import urllib.request` 错写成 `os.makedirs(...), urllib.request`
+  - `core/reporter/intraday_monitor.py`: `import time` 错写成 `os.makedirs(...), time`
+- **统一9:26晨间监控与复盘推送股票池**：`morning_auction_check.py` 从 `is_pick=1 + rank<=5` 并集改为仅取 `is_pick=1`，与复盘报告保持一致
+

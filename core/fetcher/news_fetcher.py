@@ -8,11 +8,12 @@
 """
 
 import sys, os, json, logging, re
+import requests
 # 确保项目根目录在 sys.path + 日志落盘
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _log_dir = os.path.join(_project_root, "logs")
 if not os.path.exists(_log_dir):
-    os.makedirs(_log_dir, exist_ok=True), requests
+    os.makedirs(_log_dir, exist_ok=True)
 from datetime import datetime
 
 logging.basicConfig(
