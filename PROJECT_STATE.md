@@ -414,4 +414,6 @@
 - **pre-commit hook修复**：`.qa_pending` 检查条件从 `if [ -f ]` 改为 `if [ ! -f ]`（有Python改动但无QA标记时拦截提交）
 - **个股收盘采集恢复飞书推送**：`fetch_all_stocks_daily.py` daily_quotes_update() 末尾加 print() 输出采集结果，cron announce 可正常推送至飞书（之前仅有 logger.info 写日志文件，stdout 为空）
 - **昨日选股复盘改为仅取精选**：`close_task.py` _load_yesterday_picks() SQL 从`LIMIT 10`改为`is_pick=1`，只展示精选5只
+- **板块表现修复**：`close_task.py` _load_sector_data() 从按 rank_type=top_gain/top_fall 查询改为直接从 rank_type='all' 排序取前/后10名，解决 daily_fetch.py 只写入 'all' 类型导致板块为空的问题
+- **复盘增加分步耗时日志**：`close_task.py` daily_close_task() 每个关键阶段加 [TIMING] 输出（指数加载、板块数据、涨停数据、明日选股等），便于定位cron超时瓶颈
 

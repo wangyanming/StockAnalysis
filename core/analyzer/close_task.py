@@ -152,6 +152,13 @@ def _get_quotes_for_candidates(candidate_stocks: list) -> dict:
     return quotes
 
 
+def _log_timing(t_start: float, label: str) -> None:
+    """分步计时 print 输出"""
+    import time as _t
+    elapsed = _t.time() - t_start
+    print(f'[TIMING] {label}: {elapsed:.1f}s')
+
+
 def _load_index_quotes(trade_date: str) -> dict:
     """从 index_quotes 表读取今日指数行情"""
     today_dash = f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}"
@@ -723,15 +730,22 @@ def _build_position_data(trade_date: str) -> list:
 
 def daily_close_task() -> str:
     """收盘后执行的完整流程"""
+    import time as _time
+    _t_start = _time.time()
+
     now = datetime.now()
     trade_date = now.strftime("%Y%m%d")
     today_dash = now.strftime("%Y-%m-%d")
 
     # 加载所有数据
     index_data = _load_index_quotes(trade_date)
+    _log_timing(_t_start, "指数加载")
     sector_data = _load_sector_data(trade_date)
+    _log_timing(_t_start, "板块数据")
     limit_up_data = _load_limit_up_data(trade_date)
+    _log_timing(_t_start, "涨停数据")
     rf_amt = _load_rise_fall_amount(trade_date)
+    _log_timing(_t_start, "涨跌家数/成交额")
 
     # 成交额（从 sector_performance 汇总，单位万股->元）
     sp_amt_row = _db.fetchone(
@@ -795,6 +809,7 @@ def daily_close_task() -> str:
 
     # 昨日选股
     yesterday_picks = _load_yesterday_picks(trade_date)
+    _log_timing(_t_start, "昨日选股")
 
     # ReAct（完整三闭环：Observe→Thought→Act）
     try:
@@ -804,6 +819,7 @@ def daily_close_task() -> str:
     except Exception as e:
         logger.warning(f'ReAct 分析异常，回退到简版: {e}')
         react_text = ''
+    _log_timing(_t_start, "ReAct分析")
     
     if not react_text:
         # fallback: 简版统计
@@ -811,6 +827,7 @@ def daily_close_task() -> str:
 
     # 明日候选
     picks_data = _build_picks_data(trade_date, [])
+    _log_timing(_t_start, "明日选股")
 
     # 持仓
     position_data = _build_position_data(trade_date)
@@ -845,6 +862,9 @@ def daily_close_task() -> str:
     from core.reporter.close_report_tpl import render_report
     report = render_report(data)
     print(report)
+    _log_timing(_t_start, "渲染输出")
+    _total = _time.time() - _t_start
+    print(f'[TIMING] 总耗时: {_total:.1f}s')
     
     return report
 
