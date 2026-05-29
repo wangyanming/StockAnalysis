@@ -273,7 +273,7 @@ def _load_yesterday_picks(trade_date: str) -> list:
     
     rows = _db.fetchall(
         "SELECT code, name, total_score, `rank`, highlights, source "
-        "FROM daily_picks WHERE trade_date=%s ORDER BY `rank` ASC LIMIT 10",
+        "FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank` ASC",
         (ymd,))
     
     if not rows:
