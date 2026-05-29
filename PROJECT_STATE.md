@@ -416,4 +416,5 @@
 - **昨日选股复盘改为仅取精选**：`close_task.py` _load_yesterday_picks() SQL 从`LIMIT 10`改为`is_pick=1`，只展示精选5只
 - **板块表现修复**：`close_task.py` _load_sector_data() 从按 rank_type=top_gain/top_fall 查询改为直接从 rank_type='all' 排序取前/后10名，解决 daily_fetch.py 只写入 'all' 类型导致板块为空的问题
 - **复盘增加分步耗时日志**：`close_task.py` daily_close_task() 每个关键阶段加 [TIMING] 输出（指数加载、板块数据、涨停数据、明日选股等），便于定位cron超时瓶颈
+- **ReAct复盘日期范围修复**：`pick_react.py` 原显示单一日期（取最近一天），改为显示最早一天~最近一天，如 `选股20260522~20260528 → 检验20260529`
 

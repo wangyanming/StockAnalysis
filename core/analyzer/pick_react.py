@@ -428,7 +428,8 @@ def run_react_analysis(check_date: str = None, window_days: int = 30) -> str:
     ''', week_dates)
 
     # ymd 取最新一天给标题用
-    ymd = week_dates[0]
+    week_start = week_dates[-1]  # 最早一天（reverse order）
+    week_end = week_dates[0]     # 最近一天
 
     total = len(all_rows)
     wins = sum(1 for r in all_rows if r['next_day_change'] and r['next_day_change'] > 0)
@@ -439,7 +440,7 @@ def run_react_analysis(check_date: str = None, window_days: int = 30) -> str:
     big_win_cnt = sum(1 for r in all_rows if r['next_day_change'] and r['next_day_change'] >= 2)
 
     lines.append('─' * 30)
-    lines.append(f'📊 ReAct复盘 (选股{ymd} → 检验{check_date})')
+    lines.append(f'📊 ReAct复盘 (选股{week_start}~{week_end} → 检验{check_date})')
     lines.append(f'精选{total}只 · 胜率{win_rate:.0f}% · 均涨幅{avg_ret:+.2f}%')
     lines.append(f'最大盈利{best:+.2f}% · 最大亏损{worst:+.2f}%')
     lines.append(f'大涨(≥2%): {big_win_cnt}只')
