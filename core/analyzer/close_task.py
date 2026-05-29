@@ -176,38 +176,43 @@ def _load_index_quotes(trade_date: str) -> dict:
 
 
 def _load_yesterday_total_amount(trade_date: str) -> float:
-    """查询昨日成交额"""
+    """查询昨日成交额（从 sector_performance 取）"""
     td = datetime.strptime(trade_date, '%Y%m%d')
     for i in range(1, 8):
         prev = td - timedelta(days=i)
         prev_str = prev.strftime('%Y%m%d')
+        dash = f"{prev_str[:4]}-{prev_str[4:6]}-{prev_str[6:8]}"
         row = _db.fetchone(
-            "SELECT SUM(amount) as amt FROM index_quotes WHERE record_date=%s",
-            (f"{prev_str[:4]}-{prev_str[4:6]}-{prev_str[6:8]}",))
+            "SELECT SUM(amount) as amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
+            (dash,))
         if row and row['amt'] and row['amt'] > 0:
             return float(row['amt'])
     return 0
 
 
 def _load_sector_data(trade_date: str) -> dict:
-    """从 sector_performance 表读取板块排行"""
+    """从 sector_performance 读取板块排行（直接取 rank_type='all' 排序）"""
     today_dash = f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}"
-    result = {'top_gain': [], 'top_fall': [], 'top_inflow': [], 'top_outflow': []}
-    
-    for rank_type in ['top_gain', 'top_fall', 'top_inflow', 'top_outflow']:
-        rows = _db.fetchall(
-            "SELECT sector_name, change_pct, amount, net_inflow FROM sector_performance "
-            "WHERE record_date=%s AND rank_type=%s ORDER BY change_pct DESC",
-            (today_dash, rank_type))
-        for r in rows:
-            result[rank_type].append({
-                'name': r['sector_name'],
-                'change_pct': float(r['change_pct']) if r['change_pct'] else 0,
-                'amount': float(r['amount']) if r.get('amount') else 0,
-                'net_inflow': float(r['net_inflow']) if r.get('net_inflow') else 0,
-            })
-    
-    return result
+    rows = _db.fetchall(
+        "SELECT sector_name, change_pct, amount, net_inflow FROM sector_performance "
+        "WHERE record_date=%s AND rank_type='all' ORDER BY change_pct DESC",
+        (today_dash,))
+    parsed = []
+    for r in rows:
+        parsed.append({
+            'name': r['sector_name'],
+            'change_pct': float(r['change_pct']) if r['change_pct'] else 0,
+            'amount': float(r['amount']) if r.get('amount') else 0,
+            'net_inflow': float(r['net_inflow']) if r.get('net_inflow') else 0,
+        })
+    if not parsed:
+        return {'top_gain': [], 'top_fall': [], 'top_inflow': [], 'top_outflow': []}
+    return {
+        'top_gain': parsed[:10],
+        'top_fall': sorted(parsed, key=lambda x: x['change_pct'])[:10],
+        'top_inflow': sorted(parsed, key=lambda x: x['net_inflow'], reverse=True)[:5],
+        'top_outflow': sorted(parsed, key=lambda x: x['net_inflow'])[:5],
+    }
 
 
 def _load_limit_up_data(trade_date: str) -> dict:
