@@ -412,4 +412,5 @@
 - **统一9:26晨间监控与复盘推送股票池**：`morning_auction_check.py` 从 `is_pick=1 + rank<=5` 并集改为仅取 `is_pick=1`，与复盘报告保持一致
 - **ReAct复盘近一周统计修复**：`pick_react.py` 的近一周/评分归因从仅统计最新1天改为统计最近5个交易日，之前重复代码导致"近一周: 5只"的误导输出
 - **pre-commit hook修复**：`.qa_pending` 检查条件从 `if [ -f ]` 改为 `if [ ! -f ]`（有Python改动但无QA标记时拦截提交）
+- **个股收盘采集恢复飞书推送**：`fetch_all_stocks_daily.py` daily_quotes_update() 末尾加 print() 输出采集结果，cron announce 可正常推送至飞书（之前仅有 logger.info 写日志文件，stdout 为空）
 

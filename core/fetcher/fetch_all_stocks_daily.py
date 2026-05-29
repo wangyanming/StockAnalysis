@@ -860,12 +860,17 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
         logger.info(f'  已处理 {min(batch_start+batch_size, total)}/{total}  OK:{total_ok} FAIL:{total_fail}  {elapsed:.0f}s {speed:.0f}只/秒')
 
     elapsed_total = _time.time() - t_start
-    logger.info(f'\n{"="*50}')
-    logger.info(f'🏁 腾讯实时行情采集完成')
-    logger.info(f'  日期: {today} 总成交: {total}')
-    logger.info(f'  成功: {total_ok} 失败: {total_fail}')
-    logger.info(f'  总耗时: {elapsed_total:.1f}s = {elapsed_total/60:.1f}分钟')
-    logger.info(f'{"="*50}')
+    msg_lines = [
+        f'{"="*50}',
+        f'🏁 腾讯实时行情采集完成',
+        f'  日期: {today}',
+        f'  成功: {total_ok} 失败: {total_fail} 总成交: {total}',
+        f'  耗时: {elapsed_total:.1f}s = {elapsed_total/60:.1f}分钟',
+        f'{"="*50}',
+    ]
+    for line in msg_lines:
+        logger.info(line)
+        print(line)
     # 补全选股记录的次日涨跌幅
     try:
         from core.analyzer.pick_react import update_feedback
