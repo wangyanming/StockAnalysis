@@ -320,25 +320,14 @@ def _dim_accuracy_analysis(db, check_date: str, window_days: int = 30) -> list:
     return results
 
 
-def _yesterday_detail(db, check_date: str) -> list:
-    """昨日候选股的详细表现"""
-    yesterday = db.fetchone('''
+def _last_5_dates(db, check_date: str) -> list:
+    """最近5个有 is_pick=1 且 next_day_change 已填充的交易日期"""
+    rows = db.fetchall('''
         SELECT DISTINCT trade_date FROM daily_picks
         WHERE trade_date < %s AND is_pick = 1 AND next_day_change IS NOT NULL
-        ORDER BY trade_date DESC LIMIT 1
+        ORDER BY trade_date DESC LIMIT 5
     ''', (check_date,))
-    if not yesterday:
-        return []
-
-    ymd = yesterday['trade_date']
-    rows = db.fetchall('''
-        SELECT code, name, total_score, source, grade, next_day_change,
-               score_chip, score_money, score_sector, score_trend, score_market
-        FROM daily_picks
-        WHERE trade_date = %s AND is_pick = 1
-        ORDER BY total_score DESC
-    ''', (ymd,))
-    return rows
+    return [r['trade_date'] for r in rows]
 
 
 # ─── Step 3: Act ──────────────────────────────────────
@@ -422,76 +411,75 @@ def run_react_analysis(check_date: str = None, window_days: int = 30) -> str:
 
     lines = []
     
-    # ─── Observe: 昨日候选表现 ───
-    # 获取昨日日期（先查一次）
-    yesterday_date_row = db.fetchone('''
-        SELECT DISTINCT trade_date FROM daily_picks
-        WHERE trade_date < %s AND is_pick = 1 AND next_day_change IS NOT NULL
-        ORDER BY trade_date DESC LIMIT 1
-    ''', (check_date,))
-    ymd = yesterday_date_row['trade_date'] if yesterday_date_row else '?'
-    
-    yesterday_rows = _yesterday_detail(db, check_date)
-    
-    if not yesterday_rows:
-        lines.append('📊 ReAct 复盘: 暂无昨日候选数据')
+    # ─── Observe: 最近5日精选表现 ───
+    week_dates = _last_5_dates(db, check_date)
+    if not week_dates:
+        lines.append('📊 ReAct 复盘: 暂无候选数据')
         return '\n'.join(lines)
 
-    # 统计昨日候选
-    wins = sum(1 for r in yesterday_rows if r['next_day_change'] and r['next_day_change'] > 0)
-    total = len(yesterday_rows)
+    all_rows = []
+    placeholders = ','.join(['%s'] * len(week_dates))
+    all_rows = db.fetchall(f'''
+        SELECT trade_date, code, name, total_score, source, grade, next_day_change,
+               score_chip, score_money, score_sector, score_trend, score_market
+        FROM daily_picks
+        WHERE trade_date IN ({placeholders}) AND is_pick = 1
+        ORDER BY trade_date DESC, total_score DESC
+    ''', week_dates)
+
+    # ymd 取最新一天给标题用
+    ymd = week_dates[0]
+
+    total = len(all_rows)
+    wins = sum(1 for r in all_rows if r['next_day_change'] and r['next_day_change'] > 0)
     win_rate = wins / total * 100 if total > 0 else 0
-    avg_ret = sum(r['next_day_change'] or 0 for r in yesterday_rows) / total if total > 0 else 0
-    best = max((r['next_day_change'] for r in yesterday_rows if r['next_day_change']), default=0)
-    worst = min((r['next_day_change'] for r in yesterday_rows if r['next_day_change']), default=0)
+    avg_ret = sum(r['next_day_change'] or 0 for r in all_rows) / total if total > 0 else 0
+    best = max((r['next_day_change'] for r in all_rows if r['next_day_change']), default=0)
+    worst = min((r['next_day_change'] for r in all_rows if r['next_day_change']), default=0)
+    big_win_cnt = sum(1 for r in all_rows if r['next_day_change'] and r['next_day_change'] >= 2)
 
     lines.append('─' * 30)
     lines.append(f'📊 ReAct复盘 (选股{ymd} → 检验{check_date})')
-    win_cnt = sum(1 for r in yesterday_rows if r['next_day_change'] and r['next_day_change'] > 0)
-    big_win_cnt = sum(1 for r in yesterday_rows if r['next_day_change'] and r['next_day_change'] >= 2)
     lines.append(f'精选{total}只 · 胜率{win_rate:.0f}% · 均涨幅{avg_ret:+.2f}%')
     lines.append(f'最大盈利{best:+.2f}% · 最大亏损{worst:+.2f}%')
     lines.append(f'大涨(≥2%): {big_win_cnt}只')
     lines.append('─' * 20)
 
-    # 评分归因
-    if yesterday_rows:
-        high_cnt = sum(1 for r in yesterday_rows if r['total_score'] > 50)
-        mid_cnt = sum(1 for r in yesterday_rows if 40 <= (r['total_score'] or 0) <= 50)
-        low_cnt = sum(1 for r in yesterday_rows if r['total_score'] and r['total_score'] < 40)
-        high_win = sum(1 for r in yesterday_rows if r['total_score'] and r['total_score'] > 50 and r['next_day_change'] and r['next_day_change'] > 0)
-        mid_win = sum(1 for r in yesterday_rows if 40 <= (r['total_score'] or 0) <= 50 and r['next_day_change'] and r['next_day_change'] > 0)
-        low_win = sum(1 for r in yesterday_rows if r['total_score'] and r['total_score'] < 40 and r['next_day_change'] and r['next_day_change'] > 0)
-        high_avg = sum(r['next_day_change'] or 0 for r in yesterday_rows if r['total_score'] and r['total_score'] > 50) / high_cnt if high_cnt else 0
-        mid_avg = sum(r['next_day_change'] or 0 for r in yesterday_rows if 40 <= (r['total_score'] or 0) <= 50) / mid_cnt if mid_cnt else 0
-        low_avg = sum(r['next_day_change'] or 0 for r in yesterday_rows if r['total_score'] and r['total_score'] < 40) / low_cnt if low_cnt else 0
+    if all_rows:
+        high_rows = [r for r in all_rows if r['total_score'] and r['total_score'] > 50]
+        mid_rows = [r for r in all_rows if r['total_score'] and 40 <= r['total_score'] <= 50]
+        low_rows = [r for r in all_rows if r['total_score'] and r['total_score'] < 40]
         
-        high_win_rate = high_win / high_cnt * 100 if high_cnt > 0 else 0
-        mid_win_rate = mid_win / mid_cnt * 100 if mid_cnt > 0 else 0
-        low_win_rate = low_win / low_cnt * 100 if low_cnt > 0 else 0
+        def _win_info(rows):
+            if not rows:
+                return None
+            cnt = len(rows)
+            wins_cnt = sum(1 for r in rows if r['next_day_change'] and r['next_day_change'] > 0)
+            wr = wins_cnt / cnt * 100
+            avg = sum(r['next_day_change'] or 0 for r in rows) / cnt
+            return cnt, wr, avg
         
-        lines.append(f'评分归因(近14天 total_score):')
-        if high_cnt:
-            lines.append(f'高分(>50): {high_cnt}只 胜率{high_win_rate:.0f}% 均{high_avg:+.2f}% {"✅" if high_win_rate > 50 else "❌"}')
-        if mid_cnt:
-            lines.append(f'中分(40-50): {mid_cnt}只 胜率{mid_win_rate:.0f}% 均{mid_avg:+.2f}% {"✅" if mid_win_rate > 50 else "❌"}')
-        if low_cnt:
-            lines.append(f'低分(<40): {low_cnt}只 胜率{low_win_rate:.0f}% 均{low_avg:+.2f}% {"⚠️"}')
+        lines.append(f'评分归因(近5日 total_score):')
+        hi = _win_info(high_rows)
+        if hi:
+            lines.append(f'高分(>50): {hi[0]}只 胜率{hi[1]:.0f}% 均{hi[2]:+.2f}% {"✅" if hi[1] > 50 else "❌"}')
+        mi = _win_info(mid_rows)
+        if mi:
+            lines.append(f'中分(40-50): {mi[0]}只 胜率{mi[1]:.0f}% 均{mi[2]:+.2f}% {"✅" if mi[1] > 50 else "❌"}')
+        lo = _win_info(low_rows)
+        if lo:
+            lines.append(f'低分(<40): {lo[0]}只 胜率{lo[1]:.0f}% 均{lo[2]:+.2f}% {"⚠️"}')
         
-        # 分组
-        zt_cnt = sum(1 for r in yesterday_rows if r.get('group') in ('涨停接力','涨停回踩'))
-        fz_cnt = sum(1 for r in yesterday_rows if r.get('group') in ('区间潜伏',))
-        zt_win = sum(1 for r in yesterday_rows if r.get('group') in ('涨停接力','涨停回踩') and r['next_day_change'] and r['next_day_change'] > 0)
-        fz_win = sum(1 for r in yesterday_rows if r.get('group') in ('区间潜伏',) and r['next_day_change'] and r['next_day_change'] > 0)
-        zt_avg = sum(r['next_day_change'] or 0 for r in yesterday_rows if r.get('group') in ('涨停接力','涨停回踩')) / zt_cnt if zt_cnt else 0
-        fz_avg = sum(r['next_day_change'] or 0 for r in yesterday_rows if r.get('group') in ('区间潜伏',)) / fz_cnt if fz_cnt else 0
+        # 分组统计
+        zt_rows = [r for r in all_rows if r.get('group') in ('涨停接力','涨停回踩')]
+        fz_rows = [r for r in all_rows if r.get('group') in ('区间潜伏',)]
         
-        if zt_cnt:
-            zt_wr = zt_win / zt_cnt * 100 if zt_cnt > 0 else 0
-            lines.append(f'⚡涨停接力: {zt_cnt}只 胜率{zt_wr:.0f}% 均涨幅{zt_avg:+.2f}% {"✅" if zt_wr > 50 else ""}')
-        if fz_cnt:
-            fz_wr = fz_win / fz_cnt * 100 if fz_cnt > 0 else 0
-            lines.append(f'📗低位蓄力: {fz_cnt}只 胜率{fz_wr:.0f}% 均涨幅{fz_avg:+.2f}% {"✅" if fz_wr > 50 else ""}')
+        zt_info = _win_info(zt_rows)
+        if zt_info:
+            lines.append(f'⚡涨停接力: {zt_info[0]}只 胜率{zt_info[1]:.0f}% 均涨幅{zt_info[2]:+.2f}% {"✅" if zt_info[1] > 50 else ""}')
+        fz_info = _win_info(fz_rows)
+        if fz_info:
+            lines.append(f'📗区间潜伏: {fz_info[0]}只 胜率{fz_info[1]:.0f}% 均涨幅{fz_info[2]:+.2f}% {"✅" if fz_info[1] > 50 else ""}')
         
         lines.append('─' * 20)
         
