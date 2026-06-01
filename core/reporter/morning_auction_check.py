@@ -358,7 +358,8 @@ def run():
     lines.append('⚙️ **纪律提醒：**')
     lines.append('  • 竞价表现只是参考，开盘后前5分钟方向更关键')
     lines.append('  • 单票仓位≤50%，大盘不好时减半仓操作')
-    lines.append('  • 止损线-5%，盘中触碰立即执行')
+    lines.append('  • 止损线-5%触发→盘中三问判断洗盘/真跌，详见 docs/交易纪律.md')
+    lines.append('  • 大盘跌>1.5%暂停买入')
     lines.append('  • 大幅高开不下追，等回踩确认')
     lines.append('  • 低开>2%直接放弃，不要赌反包')
 

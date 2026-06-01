@@ -192,6 +192,243 @@ def fetch_quote(code: str):
         'amount': float(parts[9]) if parts[9] else 0,
     }
 
+# ============================================================
+# 止损三问辅助函数（2026-06-01 新增）
+# ============================================================
+
+
+def _get_stock_sector(code: str):
+    """查询个股所属行业板块
+
+    数据源: 东财个股行情接口(f127=行业板块名)，无需DB
+    返回: 板块名称字符串，或 None
+    """
+    import urllib.request
+    try:
+        market = '1.' if code.startswith('6') else '0.'
+        url = f'http://push2.eastmoney.com/api/qt/stock/get?secid={market}{code}&fields=f57,f127'
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://quote.eastmoney.com/',
+        })
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read().decode('utf-8'))
+        sector = data.get('data', {}).get('f127', '')
+        if sector:
+            return sector
+    except Exception as e:
+        logger.warning(f'查个股板块失败({code}): {e}')
+    return None
+
+
+def _get_sector_ranking(sector_name: str):
+    """获取行业板块在当日所有板块中的涨跌幅排行
+
+    数据源: 东财行业板块实时接口（push2）
+    返回: {'rank': int, 'total': int, 'change_pct': float, 'judgment': str}
+    排行前30%→板块强, 后30%→板块弱, 中间→中性
+    """
+    import urllib.request
+    try:
+        url = ('http://push2.eastmoney.com/api/qt/clist/get?'
+               'fs=m:90+t:2&fields=f12,f14,f3&pi=0&pz=200&po=1&np=1'
+               '&fltt=2&invt=2&fid=f3')
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://quote.eastmoney.com/',
+        })
+        resp = urllib.request.urlopen(req, timeout=8)
+        data = json.loads(resp.read().decode('utf-8'))
+        items = data.get('data', {}).get('diff', [])
+        if not items:
+            # 回退：从 sector_performance 取昨日排行
+            return _get_sector_ranking_from_db(sector_name)
+        total = len(items)
+        target_idx = -1
+        target_chg = 0
+        for i, s in enumerate(items):
+            if s.get('f14', '') == sector_name:
+                target_idx = i
+                target_chg = s.get('f3', 0)
+                break
+        if target_idx < 0:
+            # 名字不完全匹配时，尝试模糊匹配
+            for i, s in enumerate(items):
+                if sector_name in s.get('f14', ''):
+                    target_idx = i
+                    target_chg = s.get('f3', 0)
+                    break
+        if target_idx < 0:
+            return {'rank': 0, 'total': total, 'change_pct': 0, 'judgment': '❓未知'}
+        rank = target_idx + 1
+        pct_pos = rank / total
+        if pct_pos <= 0.3:
+            judgment = '🟢 强'
+        elif pct_pos >= 0.7:
+            judgment = '🔴 弱'
+        else:
+            judgment = '🟡 中'
+        return {'rank': rank, 'total': total, 'change_pct': target_chg, 'judgment': judgment}
+    except Exception as e:
+        logger.warning(f'查板块排行实时失败({sector_name}): {e}')
+        return _get_sector_ranking_from_db(sector_name)
+
+
+def _get_sector_ranking_from_db(sector_name: str):
+    """回退：从 sector_performance 取昨日板块排行"""
+    try:
+        from utils.dao import get_db
+        db = get_db()
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        rows = db.fetchall(
+            "SELECT sector_name, change_pct FROM sector_performance WHERE record_date=%s AND rank_type='all' AND change_pct IS NOT NULL ORDER BY change_pct DESC",
+            (yesterday,))
+        if not rows or len(rows) < 10:
+            return {'rank': 0, 'total': 0, 'change_pct': 0, 'judgment': '❓未知'}
+        total = len(rows)
+        for i, r in enumerate(rows):
+            if sector_name in r.get('sector_name', ''):
+                rank = i + 1
+                chg = r.get('change_pct', 0)
+                pct_pos = rank / total
+                if pct_pos <= 0.3:
+                    judgment = '🟢 强(昨)'
+                elif pct_pos >= 0.7:
+                    judgment = '🔴 弱(昨)'
+                else:
+                    judgment = '🟡 中(昨)'
+                return {'rank': rank, 'total': total, 'change_pct': chg, 'judgment': judgment}
+        return {'rank': 0, 'total': total, 'change_pct': 0, 'judgment': '❓未知(昨)'}
+    except Exception as e:
+        logger.warning(f'查板块排行从DB失败({sector_name}): {e}')
+        return {'rank': 0, 'total': 0, 'change_pct': 0, 'judgment': '❓未知'}
+
+
+def _get_volume_ratio(code: str, today_vol_hand: int):
+    """计算当日已成交量 vs 近5日均量
+
+    参数:
+        code: 股票代码
+        today_vol_hand: 当日已成交量（手，来自新浪实时）
+    返回: {'ratio': float, 'today_vol': int, 'ma5_vol': int, 'judgment': str}
+    量比<0.8→缩量(洗盘信号), 0.8~1.2→平量, >1.2→放量(真跌信号)
+    返回 judgment 带 emoji 前缀
+    """
+    try:
+        from utils.dao import get_db
+        db = get_db()
+        # stock_daily.volume 单位是股，需 /100 转为手
+        rows = db.fetchall(
+            "SELECT volume FROM stock_daily WHERE code=%s AND trade_date < CURDATE() ORDER BY trade_date DESC LIMIT 5",
+            (code,))
+        if not rows or len(rows) < 3:
+            return {'ratio': 0, 'today_vol': today_vol_hand, 'ma5_vol': 0, 'judgment': '❓未知'}
+        vols = [r['volume'] for r in rows if r['volume'] and r['volume'] > 0]
+        if len(vols) < 3:
+            return {'ratio': 0, 'today_vol': today_vol_hand, 'ma5_vol': 0, 'judgment': '❓未知'}
+        ma5_vol_hand = (sum(vols) / len(vols)) / 100  # 股→手
+        ratio = today_vol_hand / ma5_vol_hand if ma5_vol_hand > 0 else 0
+        if ratio < 0.8:
+            judgment = '🔵 缩量（洗盘特征）'
+        elif ratio <= 1.2:
+            judgment = '🟡 平量'
+        else:
+            judgment = '🔴 放量（警惕）'
+        return {
+            'ratio': round(ratio, 2),
+            'today_vol': today_vol_hand,
+            'ma5_vol': round(ma5_vol_hand),
+            'judgment': judgment,
+        }
+    except Exception as e:
+        logger.warning(f'计算量比失败({code}): {e}')
+        return {'ratio': 0, 'today_vol': today_vol_hand, 'ma5_vol': 0, 'judgment': '❓未知'}
+
+
+def _judge_stock(name: str, code: str, profit_pct: float, cur_price: float, prev_close: float, today_vol_hand: int):
+    """止损三问综合判断 — 输出一段结构化判断文本
+
+    参数:
+        name/code: 股票名称/代码
+        profit_pct: 盈亏百分比（已算出）
+        cur_price: 现价
+        prev_close: 昨收
+        today_vol_hand: 今日成交量（手）
+    返回: str（多行判断文本）
+    """
+    lines = []
+
+    # 红线：亏损超-10% 不走三问
+    if profit_pct < -10:
+        lines.append(f'🚨 {name}({code}) 亏损{profit_pct:.2f}%，超过-10%红线，建议立即止损')
+        return '\n'.join(lines)
+
+    # 标题行
+    if profit_pct < -5:
+        lines.append(f'🚨 {name}({code}) 亏损{profit_pct:.2f}%，已触及止损线')
+    else:
+        lines.append(f'⚠️ {name}({code}) 亏损{profit_pct:.2f}%，接近止损线')
+
+    # ① 量能判断
+    vr = _get_volume_ratio(code, today_vol_hand)
+    if vr['judgment'] != '❓未知':
+        lines.append(f'  ① 量能：今日量/5日均量 = {vr["ratio"]} → {vr["judgment"]}')
+    else:
+        lines.append(f'  ① 量能：❓ 数据不足（今日{vr["today_vol"]}手，5日均量{vr["ma5_vol"]}手）')
+
+    # ② 板块判断
+    sector = _get_stock_sector(code)
+    sector_judgment = ''
+    if sector:
+        sr = _get_sector_ranking(sector)
+        sector_judgment = sr.get('judgment', '')
+        if sector_judgment != '❓未知':
+            lines.append(f'  ② 板块：{sector} 涨幅{sr["change_pct"]:+.1f}%（行业排名 {sr["rank"]}/{sr["total"]}）→ {sr["judgment"]}')
+        else:
+            lines.append(f'  ② 板块：{sector} → ❓ 排行未知')
+    else:
+        lines.append(f'  ② 板块：❓ 未查到所属板块')
+
+    # ③ 时间判断
+    now = datetime.now()
+    h, m = now.hour, now.minute
+    total_min = h * 60 + m
+    if total_min < 14 * 60:
+        time_judgment = '⏳ 建议观察，等14:30再决策'
+    else:
+        time_judgment = '⏰ 尾盘窗口，关注收盘价'
+    lines.append(f'  ③ 时间：{h:02d}:{m:02d} → {time_judgment}')
+
+    # ④ 综合判断（复用已有结果，不再重复调接口）
+    wash_signals = 0
+    real_signals = 0
+
+    if vr['judgment'] not in ('❓未知',):
+        if vr['ratio'] < 0.8:
+            wash_signals += 1  # 缩量→洗盘
+        elif vr['ratio'] > 1.2:
+            real_signals += 1  # 放量→真跌
+    if sector_judgment:
+        if '强' in sector_judgment:
+            wash_signals += 1  # 板块强→洗盘
+        elif '弱' in sector_judgment:
+            real_signals += 1  # 板块弱→真跌
+    # 时间：14:00前更倾向洗盘(保留观察时间)
+    if total_min < 14 * 60:
+        wash_signals += 0.5
+    else:
+        real_signals += 0.5
+
+    if wash_signals >= 2:
+        conclusion = '🟡 洗盘概率较大，建议观察到尾盘'
+    elif real_signals >= 2:
+        conclusion = '🔴 真跌特征明显，建议准备止损'
+    else:
+        conclusion = '🟤 信号不明确，建议手动判断'
+    lines.append(f'  综合判断：{conclusion}')
+
+    return '\n'.join(lines)
+
 
 def run():
     now = datetime.now()
@@ -336,15 +573,16 @@ def run():
                 stock_tips.append(f'🚀 {name}({code}) 涨停 {cur:.2f}(+{day_pct:.2f}%)')
             elif profit_pct > 7:
                 stock_tips.append(f'💰 {name}({code}) 盈利+{profit_pct:.2f}%，可以考虑止盈')
-            elif profit_pct < -5:
-                stock_tips.append(f'🚨 {name}({code}) 亏损{profit_pct:.2f}%，已触及止损线，建议卖出')
             elif profit_pct < -3:
-                stock_tips.append(f'⚠️ {name}({code}) 亏损{profit_pct:.2f}%，接近-5%止损线')
+                # 亏损超-3% → 三问判断
+                judge_text = _judge_stock(name, code, profit_pct, cur, q['prev_close'], q['volume_hand'])
+                stock_tips.append(judge_text)
 
     if stock_tips:
         lines.append('  📌 个股提醒：')
         for t in stock_tips:
-            lines.append(f'    {t}')
+            for line in t.split('\n'):
+                lines.append(f'    {line}')
 
     # 时间提醒
     h, m = now.hour, now.minute

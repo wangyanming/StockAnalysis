@@ -307,7 +307,8 @@ def format_today_picks(sections: list):
     sections.append("⚙️ **操作要点：**")
     sections.append("  • 大盘盘中走弱，关注下午反弹力度")
     sections.append("  • 特朗普访华期间关注相关板块脉冲")
-    sections.append("  • 严格止损 -5%，大盘跌>1.5%暂停买入")
+    sections.append("  • 止损触发先做三问（缩量/板块红盘/时间早→不下车），详见 docs/交易纪律.md")
+    sections.append("  • 大盘跌>1.5%暂停买入")
     sections.append("  • 连板高标需注意分歧风险")
 
 # ============================================================

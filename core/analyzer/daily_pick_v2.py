@@ -560,7 +560,7 @@ def format_v2_report(results: dict) -> str:
     lines.append("")
 
     lines.append("**⚠️ 交易纪律**")
-    lines.append("· 单票≤50% | 止损-5%")
+    lines.append("· 单票≤50% | 止损-5%（先三问，详见 docs/交易纪律.md）")
     lines.append("· 大盘跌>1.5%不买")
     lines.append("· 涨停回踩组低吸不追高；区间潜伏组回踩均线低吸")
 

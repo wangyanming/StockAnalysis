@@ -381,7 +381,8 @@ def render_report(data: dict) -> str:
         parts.append("")
         
         parts.append("⚠️ 交易纪律")
-        parts.append("· 单票≤50% | 止损-5%")
+        parts.append("· 单票≤50% | 止损-5%（看三问，不盲目卖）")
+        parts.append("· 详见 docs/交易纪律.md")
         parts.append("· 大盘跌>1.5%不买")
         parts.append("· 涨停接力组高开>5%不追；区间潜伏组回踩均线低吸")
         parts.append("")
@@ -399,9 +400,9 @@ def render_report(data: dict) -> str:
                     parts.append(f"成交{p['amount_yi']:.1f}亿 换手{p['turnover']:.2f}%")
                 flg = p.get('profit_flag')
                 if flg == 'stop':
-                    parts.append(f"⚠️ 已触发止损线-5%，建议严格执行卖出")
+                    parts.append(f"⚠️ 已触发止损线-5%，先做三问判断（量能/板块/时间），详见 docs/交易纪律.md")
                 elif flg == 'near_stop':
-                    parts.append(f"⚠️ 接近止损线-5%，密切监控，可考虑减仓")
+                    parts.append(f"⚠️ 接近止损线-5%，密切监控，等14:30再决策")
                 elif flg == 'take_profit':
                     parts.append(f"💡 浮盈丰厚，可考虑止盈一部分或设移动止盈")
             total_inv = sum(p['cost_price'] * p['shares'] for p in positions)

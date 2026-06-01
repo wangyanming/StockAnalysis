@@ -235,6 +235,19 @@
 | 16:00 采集 | `python3 -c "from fetch_all_stocks_daily import daily_quotes_update; daily_quotes_update()"` | 直接输出 | 腾讯实时行情·20路并发200只/批 | ✅ 2026-05-19 |
 | 17:00 复盘 | `python3 close_task.py` | AI agent组装报告 | — | ✅ 2026-05-19 |
 
+## 最新变更 (2026-06-01 10:30)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `docs/交易纪律.md` | **新增** — 止损三问判断流程（春秋电子卖飞复盘） | ✅ |
+| `core/reporter/intraday_monitor.py` | **止损三问自动化** — 持仓亏损触发时自动输出量能/板块/时间三维判断 + 综合结论 | ✅ |
+| `core/reporter/morning_check.py` | 纪律文案改为指引到新文档 | ✅ |
+| `core/reporter/morning_auction_check.py` | 同上 | ✅ |
+| `core/reporter/close_report_tpl.py` | 同上 | ✅ |
+| `core/reporter/intraday_monitor.py` | 同上 | ✅ |
+| `core/analyzer/daily_pick_v2.py` | 同上 | ✅ |
+| `docs/design/止损三问自动化方案.md` | **新增** — 方案设计文档 | ✅ |
+
 ## 最新变更 (2026-05-26 16:55)
 
 | 文件 | 改动内容 | 状态 |
