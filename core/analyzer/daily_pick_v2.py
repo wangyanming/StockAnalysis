@@ -298,7 +298,7 @@ def pick_stocks_v2():
         logger.warning(f"涨停回踩组过滤失败: {e}")
         up_group = []
 
-    up_group.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+    up_group.sort(key=lambda x: (x.get('total_score', 0), -x.get('recoil_pct', 0)), reverse=True)
     results['up_top5'] = up_group[:5]
 
     # ── 📗 区间潜伏组 ──
@@ -357,7 +357,8 @@ def pick_stocks_v2():
         non_up_group.append(r)
         logger.info(f"    ✅ 区间潜伏: {r['name']}({code}) {r['total_score']}分 pos60={pos_60:.0f}% 5d_chg={chg_5:+.1f}%")
 
-    non_up_group.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+    # 区间潜伏组二级排序：总分降序，同分时60日位置低（低位更安全）优先
+    non_up_group.sort(key=lambda x: (x.get('total_score', 0), x.get('_60d_position', 50)), reverse=True)
     results['non_up_top5'] = non_up_group[:5]
 
     # 精选
