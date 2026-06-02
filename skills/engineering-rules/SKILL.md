@@ -228,10 +228,24 @@ StockAnalysis/
 ### 11.3 QA 工作流
 
 ```
-开发完成 → 主 agent 创建 .qa_pending → sessions_spawn QA subagent →
-  QA 执行验证 → 输出测试报告 →
-    ✅ 通过: 删除 .qa_pending → 允许提交 git
+开发完成 → sessions_spawn QA subagent（task中明确要求写文件）→
+  QA 执行验证 →
+  QA 用 write 工具将报告写入 logs/qa/<YYYYMMDD_HHMMSS>.report.md →
+  QA 用 message 工具发送结论到 channel →
+    ✅ 通过: 主 agent 提交 git（hook自动检查最新QA报告）
     ❌ 不通过: 打回附根因 → 主 agent 修复 → 重新提测
+```
+
+### 11.3.1 主 agent spawn 规范（强制）
+
+主 agent 每次 spawn QA subagent 时，**必须在 task 末尾加上以下内容**（不可省略）：
+
+```
+### ⚠️ 强制收尾流程
+完成所有验证后，按以下顺序严格执行：
+1. 先用 `write` 工具将完整测试报告写入 logs/qa/<YYYYMMDD_HHMMSS>.report.md
+2. 再用 `message` 工具发送结论到本channel
+3. 顺序不可颠倒，缺一不可
 ```
 
 ### 11.4 QA 结论处理
