@@ -15,8 +15,8 @@ from typing import List, Dict, Optional
 
 from utils.dao import get_db
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("sector_history")
 
 # 东方财富行业板块代码（同 _fetch_board_sectors_via_ulist）
 BOARD_CODES = [

@@ -14,7 +14,8 @@ import json
 import os
 from typing import Dict, Optional, List, Tuple
 
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("fundamental")
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -270,7 +271,7 @@ def get_risk_flags(code: str) -> Dict:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logger.info("Running standalone test")
     
     tests = ['002297', '603095', '002185', '603005']
     for code in tests:

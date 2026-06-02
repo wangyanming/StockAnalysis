@@ -19,8 +19,8 @@ from typing import Dict, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 import logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("stock_analysis_api")
 
 
 def _get_store():

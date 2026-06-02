@@ -16,20 +16,8 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-# 日志落盘
-_log_dir = os.path.join(_project_root, "logs")
-if not os.path.exists(_log_dir):
-    os.makedirs(_log_dir, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(_log_dir, "morning_check.log"))
-    ]
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("morning_check")
 
 
 # ============================================================

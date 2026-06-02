@@ -17,7 +17,6 @@
 ⚠️ 权重修改请改 config/scorer_weights.json，不要改这里的硬编码
 """
 
-import logging
 import os
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple
@@ -27,6 +26,7 @@ import time
 import re
 import subprocess
 
+from utils.logger import setup_logger
 from utils.fundamental import get_latest_financial, evaluate_fundamental, get_risk_flags
 
 # ─── 权重配置（从 JSON 读取） ───
@@ -64,7 +64,7 @@ MAX_SCORES = {
     'market_safety': 10,
 }
 
-logger = logging.getLogger(__name__)
+logger = setup_logger("scorer")
 
 _market_cache = {'time': 0, 'data': None}
 
@@ -142,8 +142,7 @@ def _get_today_quote_from_db(code: str) -> dict:
                 'amount': 0,
             }
     except Exception as e:
-        import logging
-        logging.getLogger('scorer').warning(f'_get_today_quote_from_db({code})失败: {e}')
+        logger.warning(f'_get_today_quote_from_db({code})失败: {e}')
     return {}
 
 
@@ -1009,6 +1008,5 @@ def format_score_report(reports: list, title: str = '') -> str:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     print("=== 评分器 v5 测试 ===")
     print(check_market_status())

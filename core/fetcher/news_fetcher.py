@@ -11,21 +11,10 @@ import sys, os, json, logging, re
 import requests
 # 确保项目根目录在 sys.path + 日志落盘
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_log_dir = os.path.join(_project_root, "logs")
-if not os.path.exists(_log_dir):
-    os.makedirs(_log_dir, exist_ok=True)
 from datetime import datetime
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(_log_dir, "news_fetcher.log"))
-    ]
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("news_fetcher")
 
 # ============================================================
 #  同花顺快讯

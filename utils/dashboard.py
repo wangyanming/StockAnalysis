@@ -21,8 +21,8 @@ from utils.strategy import ValueStrategy, MomentumStrategy
 from utils.alert_system import AlertSystem
 from utils.visualization import StockVisualizer
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("dashboard")
 
 
 class DashboardApp:

@@ -14,7 +14,8 @@
 import logging
 from typing import Optional, Union
 
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("data_validator")
 
 
 def validate_amount_volume(
@@ -180,7 +181,7 @@ def validate_fetch_result(
 
 if __name__ == '__main__':
     # 自测
-    logging.basicConfig(level=logging.INFO)
+    logger.info("Starting self-test")
     
     # 测试单位校验
     assert validate_amount_volume(10000, 1000, 10, "test") == True  # 10000/1000=10 ≈ 10

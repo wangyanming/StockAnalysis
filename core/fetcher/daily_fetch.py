@@ -14,15 +14,8 @@ import json
 import logging
 from datetime import datetime
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'daily_fetch.log'))
-    ]
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("daily_fetch")
 
 # 切换到项目根目录
 _script_dir = os.path.dirname(os.path.abspath(__file__))

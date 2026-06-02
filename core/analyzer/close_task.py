@@ -20,9 +20,11 @@ sys.path.insert(0, PROJECT_ROOT)
 if 'STOCK_DB_URL' not in os.environ:
     os.environ['STOCK_DB_URL'] = 'mysql://root:stock123@127.0.0.1:3306/stock_analysis'
 
-logger = logging.getLogger(__name__)
+# 使用统一日志工具初始化 logger
+from utils.logger import setup_logger, timing
+logger = setup_logger("close_task")
 
-# 关掉 INFO 日志（避免混入 print 输出）
+# 关掉 root logger 的 INFO 日志（避免第三方库混入）
 logging.getLogger().setLevel(logging.WARNING)
 
 from utils.dao import get_db
@@ -136,27 +138,22 @@ def _fetch_tx_quote(codes: list) -> dict:
 
 
 def _get_quotes_for_candidates(candidate_stocks: list) -> dict:
-    """获取候选股票的换手率及封板数据"""
+    """获取候选股票的换手率及封板数据（直接使用腾讯行情，新浪接口不稳定已跳过）"""
     codes = [s['code'] for s in candidate_stocks if s.get('code')]
     if not codes:
         return {}
     
-    # 先试新浪
-    quotes = _fetch_sina_quote(codes)
-    # 新浪没数据的试腾讯
-    missing = [c for c in codes if c not in quotes or not quotes[c].get('turnover_rate')]
-    if missing:
-        tx_quotes = _fetch_tx_quote(missing)
-        quotes.update(tx_quotes)
+    # 直接使用腾讯行情（新浪接口不稳定已跳过）
+    quotes = _fetch_tx_quote(codes)
     
     return quotes
 
 
 def _log_timing(t_start: float, label: str) -> None:
-    """分步计时 print 输出"""
+    """分步计时 — 通过统一日志工具输出"""
     import time as _t
     elapsed = _t.time() - t_start
-    print(f'[TIMING] {label}: {elapsed:.1f}s')
+    logger.info(f'[TIMING] {label}: {elapsed:.1f}s')
 
 
 def _load_index_quotes(trade_date: str) -> dict:
@@ -864,22 +861,12 @@ def daily_close_task() -> str:
     print(report)
     _log_timing(_t_start, "渲染输出")
     _total = _time.time() - _t_start
-    print(f'[TIMING] 总耗时: {_total:.1f}s')
+    logger.info(f'[TIMING] 总耗时: {_total:.1f}s')
     
     return report
 
 
 if __name__ == '__main__':
-    _log_dir = os.path.join(PROJECT_ROOT, "logs")
-    if not os.path.exists(_log_dir):
-        os.makedirs(_log_dir, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(os.path.join(_log_dir, "close_task.log"))
-        ]
-    )
+    # setup_logger 已在模块顶部初始化，这里不再重复配置
     result = daily_close_task()
-    print(f"[OK] 收盘复盘完成", file=sys.stderr)
+    logger.info("[OK] 收盘复盘完成")

@@ -20,19 +20,8 @@ from datetime import datetime, timedelta
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
-_log_dir = os.path.join(PROJECT_ROOT, "logs")
-if not os.path.exists(_log_dir):
-    os.makedirs(_log_dir, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(_log_dir, "pick_react.log"))
-    ]
-)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("pick_react")
 
 from utils.dao import get_db
 

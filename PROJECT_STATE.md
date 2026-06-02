@@ -21,13 +21,13 @@
 ## 本次改动
 | 文件 | 改动 | 状态 |
 |------|------|------|
-| `core/fetcher/fetch_all_stocks_daily.py` | 末尾加update_feedback调用，采集完自动补全次日涨跌幅 | 🔄 待提交 |
-| `skills/engineering-rules/SKILL.md` | 收窄trivial例外清单（改.py一律走QA） | 🔄 待提交 |
+| `core/analyzer/scorer.py` | 替换 logging.getLogger 为 setup_logger 统一日志工具 | ✅ 2026-06-02 |
 
-## 已改文件 (2026-05-28)
+## 已改文件 (2026-06-02)
 
 | 文件 | 改动内容 | 状态 |
 |------|---------|------|
+| `core/analyzer/scorer.py` | 替换 `logging.getLogger(__name__)` 为 `setup_logger("scorer")`，移除 import logging | ✅ |
 | `core/reporter/morning_check.py` | 添加sys.path设置，确保子目录运行时from utils.dao可用 | ✅ 2026-05-28 |
 | `utils/__init__.py` | 新建空文件，使utils成为Python包 | ✅ 2026-05-28 |
 
@@ -430,4 +430,17 @@
 - **板块表现修复**：`close_task.py` _load_sector_data() 从按 rank_type=top_gain/top_fall 查询改为直接从 rank_type='all' 排序取前/后10名，解决 daily_fetch.py 只写入 'all' 类型导致板块为空的问题
 - **复盘增加分步耗时日志**：`close_task.py` daily_close_task() 每个关键阶段加 [TIMING] 输出（指数加载、板块数据、涨停数据、明日选股等），便于定位cron超时瓶颈
 - **ReAct复盘日期范围修复**：`pick_react.py` 原显示单一日期（取最近一天），改为显示最早一天~最近一天，如 `选股20260522~20260528 → 检验20260529`
+
+### 2026-06-02
+
+#### 今日变更
+- **新建utils/logger.py**：统一日志工具，提供 setup_logger() + timing() 函数
+  - 日志同时输出到文件（logs/目录）和 stdout
+  - 使用 TimedRotatingFileHandler 按天轮转，保留30天
+  - 统一格式：`YYYY-MM-DD HH:MM:SS [LEVEL] module: message`
+  - 提供 TimerHelper 类支持分步计时
+- **重构close_task.py日志**：删除 __main__ 块内自行配置的 logging.basicConfig，改为引用utils/logger.py的 setup_logger()
+  - `_log_timing()` 从 print 改为 logger.info，TIMING 数据同时写入日志文件和 stdout
+  - 日志时间戳正常显示（之前缺少 format 参数导致无时间）
+- **将旧版 `print('[TIMING] ...')` 全部替换为 `logger.info('[TIMING] ...')`**
 

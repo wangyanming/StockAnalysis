@@ -10,8 +10,8 @@ import os
 import logging
 from dataclasses import dataclass, field
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from utils.logger import setup_logger
+logger = setup_logger("alert_system")
 
 
 @dataclass
