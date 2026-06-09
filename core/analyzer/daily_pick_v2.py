@@ -189,53 +189,126 @@ def pick_stocks_v2():
     scored.sort(key=lambda x: x.get('total_score', 0), reverse=True)
     results['scored'] = scored
 
-    # 7. 补查候选股补充信息
-    logger.info("  补查候选股补充信息...")
+    # 7. 补查候选股补充信息（批量查询优化）
+    logger.info("  补查候选股补充信息（批量查询）...")
     try:
         from utils.dao import get_db as _get_db2
         _db2 = _get_db2()
         _today_str2 = datetime.now().strftime('%Y%m%d')
         _five_days_ago = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
         _sixty_days_ago = (datetime.now() - timedelta(days=65)).strftime('%Y%m%d')
-        for r in scored:
-            code = r['code']
-            _row = _db2.fetchone('SELECT total_market_cap FROM stock_daily WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
-            r['total_market_cap'] = _row['total_market_cap'] if _row else 0
-            _ind = _db2.fetchone('SELECT DISTINCT industry FROM daily_limit_up WHERE code=%s AND trade_date=%s AND industry IS NOT NULL AND industry!="" LIMIT 1', (code, _today_str2))
-            r['industry'] = _ind['industry'] if _ind else ''
-            _zt = _db2.fetchone('SELECT board_times, bomb_times, price, turnover_rate FROM daily_limit_up WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
-            r['board_times'] = _zt['board_times'] if _zt else 1
-            r['bomb_times'] = _zt['bomb_times'] if _zt else 0
-            _zt5 = _db2.fetchone('SELECT trade_date, price FROM daily_limit_up WHERE code=%s AND trade_date>=%s AND trade_date<=%s AND board_times=1 AND (status IS NULL OR status!="跌停") ORDER BY trade_date DESC LIMIT 1', (code, _five_days_ago, _today_str2))
-            r['recent_zt_date'] = _zt5['trade_date'] if _zt5 else ''
-            r['recent_zt_price'] = _zt5['price'] if _zt5 else 0.0
-            _klines_60 = _db2.fetchall('SELECT trade_date, close, low, high, change_pct, volume, amount FROM stock_daily WHERE code=%s AND trade_date>=%s AND trade_date<=%s ORDER BY trade_date', (code, _sixty_days_ago, _today_str2))
-            if _klines_60:
-                _low = min((k['low'] for k in _klines_60 if k['low']), default=0)
-                _high = max((k['high'] for k in _klines_60 if k['high']), default=0)
-                _close_now = _klines_60[-1]['close']
-                r['_60d_low'] = _low
-                r['_60d_high'] = _high
-                r['_60d_position'] = ((_close_now - _low) / (_high - _low) * 100) if (_high - _low) > 0 else 50
-                _last5 = [k for k in _klines_60 if k['trade_date'] >= _five_days_ago][-5:]
-                r['_5d_up_days'] = sum(1 for k in _last5 if (k.get('change_pct') or 0) > 0)
-                if len(_last5) >= 2:
-                    r['_5d_chg'] = (_last5[-1]['close'] - _last5[0]['close']) / _last5[0]['close'] * 100 if _last5[0]['close'] else 0
+        
+        if scored:
+            codes_list = [r['code'] for r in scored]
+            _pl = ','.join(['%s'] * len(codes_list))
+            
+            # 批量查市值+收盘价
+            all_market = {}
+            _mrows = _db2.fetchall(f'''
+                SELECT code, total_market_cap, close, turnover_rate
+                FROM stock_daily
+                WHERE trade_date=%s AND code IN ({_pl})
+            ''', (_today_str2, *codes_list))
+            for _mr in _mrows:
+                all_market[_mr['code']] = _mr
+            
+            # 批量查今日涨停数据（行业/连板/封板/换手率）
+            all_zt_today = {}
+            _zrows = _db2.fetchall(f'''
+                SELECT code, board_times, bomb_times, price, turnover_rate, industry
+                FROM daily_limit_up
+                WHERE trade_date=%s AND code IN ({_pl})
+            ''', (_today_str2, *codes_list))
+            for _zr in _zrows:
+                all_zt_today[_zr['code']] = _zr
+            
+            # 批量查近5天的首板涨停（涨停回踩用）
+            all_zt5 = {}
+            _z5rows = _db2.fetchall(f'''
+                SELECT l.code, l.trade_date, l.price, l.turnover_rate as zt_turnover_rate,
+                       s.close as zt_close
+                FROM daily_limit_up l
+                LEFT JOIN stock_daily s ON s.code=l.code AND s.trade_date=l.trade_date
+                WHERE l.trade_date>=%s AND l.trade_date<=%s AND l.board_times=1
+                  AND (l.status IS NULL OR l.status!=%s)
+                  AND l.code IN ({_pl})
+                ORDER BY l.code, l.trade_date DESC
+            ''', (_five_days_ago, _today_str2, '跌停', *codes_list))
+            for _z5r in _z5rows:
+                c = _z5r['code']
+                if c not in all_zt5:  # 只保留最新的（ORDER BY DESC 第一条）
+                    all_zt5[c] = _z5r
+            
+            # 批量查60天K线
+            all_klines = {}
+            _krows = _db2.fetchall(f'''
+                SELECT code, trade_date, close, low, high, change_pct, volume, amount
+                FROM stock_daily
+                WHERE trade_date>=%s AND trade_date<=%s AND code IN ({_pl})
+                ORDER BY code, trade_date
+            ''', (_sixty_days_ago, _today_str2, *codes_list))
+            for _kr in _krows:
+                c = _kr['code']
+                if c not in all_klines:
+                    all_klines[c] = []
+                all_klines[c].append(_kr)
+            
+            # 批量查近5天的换手率（分组过滤用）
+            all_turn = {}
+            _trows = _db2.fetchall(f'''
+                SELECT code, trade_date, turnover_rate
+                FROM stock_daily
+                WHERE trade_date>=%s AND trade_date<=%s AND code IN ({_pl})
+                ORDER BY code, trade_date
+            ''', (_five_days_ago, _today_str2, *codes_list))
+            for _tr in _trows:
+                all_turn[_tr['code']] = all_turn.get(_tr['code'], []) + [_tr]
+            
+            for r in scored:
+                code = r['code']
+                _mr = all_market.get(code, {})
+                r['total_market_cap'] = _mr.get('total_market_cap', 0) or 0
+                r['today_close'] = _mr.get('close', 0) or 0
+                r['today_turnover'] = _mr.get('turnover_rate', 0) or 0
+                
+                _zr = all_zt_today.get(code, {})
+                r['board_times'] = _zr.get('board_times', 1) or 1
+                r['bomb_times'] = _zr.get('bomb_times', 0) or 0
+                r['industry'] = _zr.get('industry', '')
+                
+                _z5r = all_zt5.get(code, {})
+                r['recent_zt_date'] = _z5r.get('trade_date', '')
+                r['recent_zt_price'] = _z5r.get('price', 0.0) or 0.0
+                r['zt_turnover_rate'] = _z5r.get('zt_turnover_rate', 0) or 0
+                
+                _klines_60 = all_klines.get(code, [])
+                if _klines_60:
+                    _low = min((k['low'] for k in _klines_60 if k['low']), default=0)
+                    _high = max((k['high'] for k in _klines_60 if k['high']), default=0)
+                    _close_now = _klines_60[-1]['close']
+                    r['_60d_low'] = _low
+                    r['_60d_high'] = _high
+                    r['_60d_position'] = ((_close_now - _low) / (_high - _low) * 100) if (_high - _low) > 0 else 50
+                    _last5 = [k for k in _klines_60 if k['trade_date'] >= _five_days_ago][-5:]
+                    r['_5d_up_days'] = sum(1 for k in _last5 if (k.get('change_pct') or 0) > 0)
+                    if len(_last5) >= 2:
+                        r['_5d_chg'] = (_last5[-1]['close'] - _last5[0]['close']) / _last5[0]['close'] * 100 if _last5[0]['close'] else 0
+                    else:
+                        r['_5d_chg'] = 0
+                    _vol_last5 = [k['amount'] for k in _last5 if k['amount']]
+                    _vol_prev10 = [k['amount'] for k in _klines_60 if k['amount']][-15:-5] if len(_klines_60) >= 15 else []
+                    r['_5d_avg_amount'] = sum(_vol_last5) / len(_vol_last5) if _vol_last5 else 0
+                    r['_10d_prev_avg_amount'] = sum(_vol_prev10) / len(_vol_prev10) if _vol_prev10 else 0
+                    _closes_last5 = [k['close'] for k in _klines_60 if k['close']][-5:]
+                    r['_ma5'] = sum(_closes_last5) / len(_closes_last5) if _closes_last5 else 0
                 else:
+                    r['_60d_position'] = 50
+                    r['_5d_up_days'] = 0
                     r['_5d_chg'] = 0
-                _vol_last5 = [k['amount'] for k in _last5 if k['amount']]
-                _vol_prev10 = [k['amount'] for k in _klines_60 if k['amount']][-15:-5] if len(_klines_60) >= 15 else []
-                r['_5d_avg_amount'] = sum(_vol_last5) / len(_vol_last5) if _vol_last5 else 0
-                r['_10d_prev_avg_amount'] = sum(_vol_prev10) / len(_vol_prev10) if _vol_prev10 else 0
-                _closes_last5 = [k['close'] for k in _klines_60 if k['close']][-5:]
-                r['_ma5'] = sum(_closes_last5) / len(_closes_last5) if _closes_last5 else 0
-            else:
-                r['_60d_position'] = 50
-                r['_5d_up_days'] = 0
-                r['_5d_chg'] = 0
-                r['_5d_avg_amount'] = 0
-                r['_10d_prev_avg_amount'] = 0
-                r['_ma5'] = 0
+                    r['_5d_avg_amount'] = 0
+                    r['_10d_prev_avg_amount'] = 0
+                    r['_ma5'] = 0
+        logger.info(f"  补查完成，{len(scored)}只候选处理完毕")
     except Exception as e:
         logger.warning(f"补查信息失败: {e}")
 
@@ -246,9 +319,8 @@ def pick_stocks_v2():
 
     # ── ⚡ 涨停回踩组 ──
     # 条件：近5日首板涨停 → 今日未涨停 → 缩量回踩不破起涨点
+    # 使用补查阶段已批量获取的数据，不再逐条查DB
     try:
-        from utils.dao import get_db as _get_db3
-        _db3 = _get_db3()
         up_group = []
         for r in scored:
             code = r['code']
@@ -262,8 +334,7 @@ def pick_stocks_v2():
             # ✅ 涨停日不能是今天（必须是隔天回踩）
             if zt_date >= _today_str2:
                 continue
-            _q = _db3.fetchone('SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
-            today_close_ = _q['close'] if _q else 0
+            today_close_ = r.get('today_close', 0) or 0
             if today_close_ < zt_price * 0.97:
                 continue
             # ✅ 今天收盘在涨停价的-5%~+5%区间（排除一字板/涨停延续/大跌跌破起涨点）
@@ -271,10 +342,10 @@ def pick_stocks_v2():
             if zt_change_pct < -5 or zt_change_pct > 5:
                 logger.info(f"    🚫 {r['name']} 相对涨停日涨跌{zt_change_pct:+.2f}%超出-5%~+5%区间")
                 continue
-            _ztv = _db3.fetchone('SELECT turnover_rate FROM daily_limit_up WHERE code=%s AND trade_date=%s LIMIT 1', (code, zt_date))
-            _tdv = _db3.fetchone('SELECT turnover_rate FROM stock_daily WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
-            zt_turn = _ztv['turnover_rate'] if _ztv else 0
-            td_turn = _tdv['turnover_rate'] if _tdv else 0
+            # 换手率已在补查阶段通过 all_market/all_klines 获取
+            td_turn = r.get('today_turnover', 0) or 0
+            # 放量过滤：如果涨停日换手率 > 0，检查今日换手是否超过涨停日的2倍
+            zt_turn = r.get('zt_turnover_rate', 0) or 0
             if zt_turn > 0 and td_turn > zt_turn * 2.0:
                 logger.info(f"    🚫 {r['name']} 放量(今日换手{td_turn}% > 涨停日{zt_turn}%*2.0={zt_turn*2.0:.1f}%)")
                 continue
@@ -293,7 +364,6 @@ def pick_stocks_v2():
             r['group'] = '涨停回踩'
             up_group.append(r)
             logger.info(f"    ✅ 涨停回踩: {r['name']}({code}) 涨停{zt_date} 回踩{recoil_pct:+.2f}% 换手{td_turn}%")
-        _db3.close()
     except Exception as e:
         logger.warning(f"涨停回踩组过滤失败: {e}")
         up_group = []
@@ -343,14 +413,7 @@ def pick_stocks_v2():
             logger.info(f"    🚫 {r['name']} 量能过大(近5日均量{avg_5/1e8:.1f}亿 > 前10日{avg_10/1e8:.1f}亿*2.5={avg_10*2.5/1e8:.1f}亿)")
             continue
         ma5 = r.get('_ma5', 0)
-        close_now = r.get('today_close', 0)
-        if not close_now:
-            from utils.dao import get_db
-            _dx = get_db()
-            _qx = _dx.fetchone('SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s LIMIT 1', (code, _today_str2))
-            close_now = _qx['close'] if _qx else 0
-            _dx.close()
-        r['today_close'] = close_now
+        close_now = r.get('today_close', 0) or 0
         if ma5 > 0 and close_now < ma5:
             continue
         r['group'] = '区间潜伏'
