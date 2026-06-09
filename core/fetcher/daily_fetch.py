@@ -14,14 +14,14 @@ import json
 import logging
 from datetime import datetime
 
-from utils.logger import setup_logger
-logger = setup_logger("daily_fetch")
-
-# 切换到项目根目录
+# 切换到项目根目录（必须在任何项目内部import之前执行）
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_script_dir))  # core/fetcher -> core -> 项目根
 os.chdir(_project_root)
 sys.path.insert(0, _project_root)
+
+from utils.logger import setup_logger
+logger = setup_logger("daily_fetch")
 
 # 默认使用 MySQL（无环境变量时兜底）
 if 'STOCK_DB_URL' not in os.environ:

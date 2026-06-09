@@ -1,0 +1,112 @@
+{
+  "zt_open_gap_predictors": [
+    {
+      "feature": "涨停强度(20cm vs 10cm)",
+      "description": "20cm涨停次日平均溢价-0.56%，10cm涨停平均溢价+0.83%。10cm涨停次日溢价更高",
+      "correlation": -0.139,
+      "significance": "high"
+    },
+    {
+      "feature": "涨停当日换手率",
+      "description": "换手率<3%涨停次日均+2.89%(胜率74%)，>20%均-1.84%(胜率30%)。筹码锁定好→次日溢价高",
+      "correlation": -0.315,
+      "significance": "high"
+    },
+    {
+      "feature": "流通市值",
+      "description": "最佳>500亿(均+1.11%)，最差<30亿(均+0.10%)。小市值弹性最大",
+      "correlation": 0.051,
+      "significance": "medium"
+    },
+    {
+      "feature": "涨停日成交额",
+      "description": "<1亿均+3.02%，>20亿均-0.10%。缩量板筹码集中→溢价好",
+      "correlation": -0.208,
+      "significance": "medium"
+    },
+    {
+      "feature": "是否连板",
+      "description": "首板次日均+0.47%，连板(>=2板)次日均+0.33%。首板溢价更高→连板后抛压增大",
+      "correlation": -0.029,
+      "significance": "high"
+    }
+  ],
+  "non_zt_strategies": [
+    {
+      "name": "低估值放量潜伏",
+      "logic": "PE<15 + 换手率3-15%(温和放量) + 当日±3%横盘 + 市值>50亿",
+      "expected_win_rate": 37.1,
+      "expected_return_pct": -0.66,
+      "sample_count": 132,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-0.66%胜率37.1%(n=132)。收益为负，说明该简单的T+1买入持有策略在A股中不具有超额收益",
+      "buy_time": "T日收盘",
+      "sell_time": "T+1日收盘"
+    },
+    {
+      "name": "温和放量趋势跟随",
+      "logic": "当日涨幅0-5%(温和上涨) + 换手率>=5% + 放量 + T+1卖出",
+      "expected_win_rate": 38.8,
+      "expected_return_pct": -0.85,
+      "sample_count": 3000,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-0.85%胜率38.8%(n=3000)。收益为负，说明该简单的T+1买入持有策略在A股中不具有超额收益",
+      "buy_time": "T日收盘",
+      "sell_time": "T+1日收盘"
+    },
+    {
+      "name": "下影线尾盘抄底",
+      "logic": "当日±2%内 + 下影线占比>60%(收盘靠近高点) + 当日微跌或平盘",
+      "expected_win_rate": 28.2,
+      "expected_return_pct": -1.39,
+      "sample_count": 3000,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-1.39%胜率28.2%(n=3000)。收益为负，说明该简单的T+1买入持有策略在A股中不具有超额收益",
+      "buy_time": "T日收盘",
+      "sell_time": "T+1日收盘"
+    },
+    {
+      "name": "涨停回踩低吸",
+      "logic": "涨停股5日内回踩3-15% + 换手率3-20%(非恐慌缩量) + 首次回踩企稳",
+      "expected_win_rate": 47.1,
+      "expected_return_pct": 0.1,
+      "avg_open_to_close": -0.32,
+      "sample_count": 537,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值+0.10%胜率47.1%(n=537)。微弱正收益，考虑T+0.5仓位管理"
+    },
+    {
+      "name": "放量突破前日高",
+      "logic": "当日涨幅2-10% + 成交量>前日1.5倍 + 收盘高于前日2%+",
+      "expected_win_rate": 42.1,
+      "expected_return_pct": -0.44,
+      "sample_count": 3000,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-0.44%胜率42.1%(n=3000)。接近零收益，需配合择时/仓位管理才可能有效",
+      "buy_time": "T日收盘",
+      "sell_time": "T+1日收盘"
+    },
+    {
+      "name": "阴线缩量洗盘识别",
+      "logic": "当日阴线(-1至-5%) + 缩量至前日70%以下 + 收盘不破前日95%",
+      "expected_win_rate": 29.8,
+      "expected_return_pct": -1.19,
+      "sample_count": 3000,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-1.19%胜率29.8%(n=3000)。收益为负，说明该简单的T+1买入持有策略在A股中不具有超额收益",
+      "buy_time": "T日收盘",
+      "sell_time": "T+1日收盘"
+    },
+    {
+      "name": "连板回踩2进3",
+      "logic": "连续2日涨停后5日内回踩2-10%(不破第二板收盘) + 首次回踩",
+      "expected_win_rate": 42.7,
+      "expected_return_pct": -0.34,
+      "avg_open_to_close": -0.6,
+      "sample_count": 3000,
+      "reasoning": "T日收盘买入→T+1收盘卖出收益均值-0.34%胜率42.7%(n=3000)。接近零收益，需配合择时/仓位管理才可能有效"
+    }
+  ],
+  "recommended_next_steps": [
+    "1. 将涨停预测特征集成到scorer.py评分系统，给次日开盘溢价高的组合（低位+低换手+首板）加分",
+    "2. 开发连板回踩(策略G)的实时监控模块，尾盘买入次日高开卖出",
+    "3. 将温和放量趋势跟随(策略B)与AI评分结合，构建主动选股+趋势跟随的组合策略",
+    "4. 统计所有策略在2026年5-6月的回测表现，与总样本对比检查时效性衰减",
+    "5. 检查每个策略的日均信号数量与容量（在活跃交易日的平均标的数）",
+    "6. 将特征分析结果写入飞书或bitable，建立持续监控dashboard"
+  ]
+}

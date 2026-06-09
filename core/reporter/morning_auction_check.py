@@ -11,14 +11,12 @@ import sys, os, json, logging, re
 import urllib.request
 # 确保项目根目录在 sys.path + 日志落盘
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, _project_root)
+os.chdir(_project_root)
 from datetime import datetime, timedelta
 
 from utils.logger import setup_logger
 logger = setup_logger("morning_auction_check")
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.chdir(PROJECT_ROOT)
-sys.path.insert(0, PROJECT_ROOT)
 
 
 def fetch_realtime_quote(code: str):

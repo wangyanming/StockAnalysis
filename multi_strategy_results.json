@@ -1,0 +1,134 @@
+[
+  {
+    "name": "S8_大盘过滤",
+    "count": 458,
+    "win_rate": 46.943231441048034,
+    "avg_return": 0.1322270742358081,
+    "max_win": 24.33,
+    "max_loss": -21.33,
+    "big_win": 87,
+    "big_loss": 142,
+    "big_loss_pct": 31.004366812227076
+  },
+  {
+    "name": "S5_热门板块",
+    "count": 468,
+    "win_rate": 46.36752136752137,
+    "avg_return": 0.10055555555555565,
+    "max_win": 24.33,
+    "max_loss": -21.33,
+    "big_win": 89,
+    "big_loss": 147,
+    "big_loss_pct": 31.41025641025641
+  },
+  {
+    "name": "S4_放量突破",
+    "count": 469,
+    "win_rate": 46.26865671641791,
+    "avg_return": -0.1864179104477611,
+    "max_win": 24.48,
+    "max_loss": -22.83,
+    "big_win": 79,
+    "big_loss": 146,
+    "big_loss_pct": 31.13006396588486
+  },
+  {
+    "name": "S1_最低市值",
+    "count": 468,
+    "win_rate": 45.94017094017094,
+    "avg_return": 0.19987179487179504,
+    "max_win": 24.33,
+    "max_loss": -21.33,
+    "big_win": 92,
+    "big_loss": 143,
+    "big_loss_pct": 30.555555555555557
+  },
+  {
+    "name": "S2_最高换手",
+    "count": 468,
+    "win_rate": 45.72649572649573,
+    "avg_return": 0.04820512820512826,
+    "max_win": 24.33,
+    "max_loss": -21.33,
+    "big_win": 88,
+    "big_loss": 147,
+    "big_loss_pct": 31.41025641025641
+  },
+  {
+    "name": "S9_MA20上方",
+    "count": 468,
+    "win_rate": 44.230769230769226,
+    "avg_return": -0.12438034188034178,
+    "max_win": 22.98,
+    "max_loss": -21.33,
+    "big_win": 84,
+    "big_loss": 146,
+    "big_loss_pct": 31.196581196581196
+  },
+  {
+    "name": "S3_首板",
+    "count": 467,
+    "win_rate": 43.25481798715203,
+    "avg_return": -0.00522483940042829,
+    "max_win": 31.62,
+    "max_loss": -19.94,
+    "big_win": 87,
+    "big_loss": 157,
+    "big_loss_pct": 33.61884368308351
+  },
+  {
+    "name": "S10_首板+热点",
+    "count": 467,
+    "win_rate": 43.25481798715203,
+    "avg_return": -0.00522483940042829,
+    "max_win": 31.62,
+    "max_loss": -19.94,
+    "big_win": 87,
+    "big_loss": 157,
+    "big_loss_pct": 33.61884368308351
+  },
+  {
+    "name": "S11_放量首板",
+    "count": 468,
+    "win_rate": 42.52136752136752,
+    "avg_return": -0.31222222222222207,
+    "max_win": 31.62,
+    "max_loss": -18.32,
+    "big_win": 77,
+    "big_loss": 159,
+    "big_loss_pct": 33.97435897435898
+  },
+  {
+    "name": "S6_均线多头",
+    "count": 468,
+    "win_rate": 41.452991452991455,
+    "avg_return": -0.29764957264957254,
+    "max_win": 22.98,
+    "max_loss": -21.33,
+    "big_win": 90,
+    "big_loss": 155,
+    "big_loss_pct": 33.11965811965812
+  },
+  {
+    "name": "S12_高开板",
+    "count": 466,
+    "win_rate": 41.41630901287554,
+    "avg_return": 0.4066952789699571,
+    "max_win": 39.85,
+    "max_loss": -18.32,
+    "big_win": 92,
+    "big_loss": 150,
+    "big_loss_pct": 32.18884120171674
+  },
+  {
+    "name": "S7_非追高",
+    "count": 468,
+    "win_rate": 41.02564102564102,
+    "avg_return": -0.27730769230769176,
+    "max_win": 31.62,
+    "max_loss": -19.94,
+    "big_win": 81,
+    "big_loss": 171,
+    "big_loss_pct": 36.53846153846153
+  }
+]

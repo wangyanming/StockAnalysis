@@ -24,12 +24,19 @@ from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 from core.analyzer.scorer import check_market_status, score_candidate, format_score_report
 
 
+def _log_timing(t_start: float, label: str) -> None:
+    """打耗时日志"""
+    elapsed = time.time() - t_start
+    logger.info(f"  [TIMING] {label}: {elapsed:.1f}s")
+
+
 def pick_stocks_v2():
     """
     新版选股逻辑：涨停发现热点 → 基本面筛选 → 综合评分 → 风险过滤
     """
     from core.analyzer.scorer import fetch_sina_quote
 
+    _T_START = time.time()
     store = QuoteStore()
     zt = LimitUpAnalyzer()
 
@@ -42,6 +49,7 @@ def pick_stocks_v2():
     results['market'] = market
 
     logger.info(f"大盘: {market['status']} | {market['reason']}")
+    _log_timing(_T_START, "大盘环境判断")
 
     # 2. 涨停数据分析
     logger.info("2. 涨停板分析...")
@@ -67,6 +75,7 @@ def pick_stocks_v2():
             logger.info(f"总涨停{len(today_up)}只 | 热点: {hot_industries[:3]}")
     except Exception as e:
         logger.warning(f"涨停分析失败: {e}")
+    _log_timing(_T_START, "涨停数据分析")
 
     # 3. 连板梯队
     logger.info("3. 连板梯队...")
@@ -78,6 +87,7 @@ def pick_stocks_v2():
             logger.info(f"连板: {[(t.get('name'), t.get('board_count')) for t in boards[:5]]}")
     except Exception as e:
         logger.warning(f"连板分析失败: {e}")
+    _log_timing(_T_START, "连板梯队分析")
 
     # 4. 板块表现
     logger.info("4. 板块表现分析...")
@@ -88,6 +98,7 @@ def pick_stocks_v2():
             results['top_sectors'] = top_sectors
     except Exception as e:
         logger.warning(f"板块分析失败: {e}")
+    _log_timing(_T_START, "板块表现分析")
 
     # 5. 构建候选池：全市场扫描
     logger.info("5. 构建候选池（全市场扫描）...")
@@ -137,6 +148,7 @@ def pick_stocks_v2():
             ORDER BY d.amount DESC
         ''', (target_date, three_months_ago, target_date))
         logger.info(f"  全市场符合条件的活跃股: {len(all_strong)}只")
+        _log_timing(_T_START, "全市场扫描+建候选池")
 
         for sr in all_strong:
             code = sr['code']
@@ -177,14 +189,20 @@ def pick_stocks_v2():
 
     # 6. 综合评分
     logger.info(f"6. 综合评分 (共{len(raw_candidates)}个候选)...")
+    _t0_step6 = time.time()
+    _log_timing(_T_START, "综合评分(含候选池构建)")
     scored = []
-    for code, name, source in raw_candidates:
+    for idx600, (code, name, source) in enumerate(raw_candidates, 1):
         try:
             r = score_candidate(code, name)
             r['source'] = source
             scored.append(r)
+            if idx600 % 100 == 0:
+                logger.info(f"    评分进度: {idx600}/{len(raw_candidates)} ({idx600*100//len(raw_candidates)}%)")
         except Exception as e:
             logger.warning(f"评分{name}失败: {e}")
+
+    _log_timing(_t0_step6, "综合评分循环")
 
     scored.sort(key=lambda x: x.get('total_score', 0), reverse=True)
     results['scored'] = scored
@@ -309,8 +327,10 @@ def pick_stocks_v2():
                     r['_10d_prev_avg_amount'] = 0
                     r['_ma5'] = 0
         logger.info(f"  补查完成，{len(scored)}只候选处理完毕")
+        _log_timing(_t0_step6, "补查+过滤")
     except Exception as e:
         logger.warning(f"补查信息失败: {e}")
+        _log_timing(_t0_step6, "补查+过滤(出错)")
 
     # ============================================================
     # 8. 分组过滤
@@ -440,6 +460,8 @@ def pick_stocks_v2():
             })
 
     _save_picks_to_db(results)
+
+    _log_timing(_T_START, "总耗时")
 
     if scored:
         logger.info(f"选股完成，最高分: {scored[0]['name']}({scored[0]['total_score']}分)")

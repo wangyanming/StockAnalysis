@@ -21,7 +21,11 @@
 ## 本次改动
 | 文件 | 改动 | 状态 |
 |------|------|------|
-| `core/analyzer/scorer.py` | 替换 logging.getLogger 为 setup_logger 统一日志工具 | ✅ 2026-06-02 |
+| `core/analyzer/daily_pick_v3.py` | **新增** 低吸抄底选股引擎（基于回测结论：大跌抄底+缩量胜率65.9%） | ✅ 2026-06-04 |
+| `core/analyzer/close_task.py` | `_build_picks_data()` 改为调用 `daily_pick_v3.pick_stocks_v3()` 替代 v2 | ✅ 2026-06-04 |
+| `core/reporter/close_report_tpl.py` | 第5段改为低吸抄底引擎输出格式（低吸抄底TOP5 + 放量反转组 + 操作计划） | ✅ 2026-06-04 |
+| `docs/requirements/REQ-20260604-01-低吸抄底选股引擎.md` | **新增** 需求文档 | ✅ 2026-06-04 |
+| `docs/design/DES-20260604-01-低吸抄底选股引擎.md` | **新增** 方案设计 | ✅ 2026-06-04 |
 
 ## 已改文件 (2026-06-02)
 
