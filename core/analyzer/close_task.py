@@ -22,7 +22,7 @@ if 'STOCK_DB_URL' not in os.environ:
 
 # 使用统一日志工具初始化 logger
 from utils.logger import setup_logger, timing
-logger = setup_logger("close_task")
+logger = setup_logger("close_task", console=False)
 
 # 关掉 root logger 的 INFO 日志（避免第三方库混入）
 logging.getLogger().setLevel(logging.WARNING)
@@ -858,6 +858,7 @@ def daily_close_task() -> str:
     # 渲染
     from core.reporter.close_report_tpl import render_report
     report = render_report(data)
+    
     print(report)
     _log_timing(_t_start, "渲染输出")
     _total = _time.time() - _t_start

@@ -74,7 +74,7 @@ def setup_logger(
     name: str,
     level: int = _DEFAULT_LEVEL,
     log_file: Optional[str] = None,
-    console: bool = True,
+    console: bool = False,
     when: str = "midnight",
     backup_count: int = 30,
 ) -> logging.Logger:

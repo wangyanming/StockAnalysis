@@ -437,6 +437,12 @@
 
 ### 2026-06-02
 
+#### 2026-06-10 cron command模式改造
+- **command模式替代agentTurn**：3个定时任务（15:10快照、16:00数据采集、16:30复盘）迁移到command模式，Gateway直接执行shell，不走模型调用
+- **setup_logger默认console=False**：`utils/logger.py` 修改，所有模块日志只写文件不输出stdout
+- **daily_fetch.py增加stdout输出**：`__main__`块末尾增加格式化打印，用于command模式推送飞书
+- **受影响任务**：`15:10 daily_fetch`, `16:00 fetch_all_stocks_daily`, `16:30 close_task`
+
 #### 今日变更
 - **新建utils/logger.py**：统一日志工具，提供 setup_logger() + timing() 函数
   - 日志同时输出到文件（logs/目录）和 stdout

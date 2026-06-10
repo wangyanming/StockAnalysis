@@ -192,10 +192,37 @@ def fetch_all(do_stock_daily: bool = False):
             logger.error(f"个股日K增量更新失败: {e}")
     
     elapsed = time.time() - t0
+    results['elapsed'] = elapsed
     logger.info(f"✅ 采集完成 ({elapsed:.1f}s): {results}")
     return results
 
 if __name__ == '__main__':
     mode = '收盘完整' if '--stock-daily' in sys.argv else '盘中快照'
     logger.info(f"=== 开始数据采集 [{mode}]: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
-    fetch_all(do_stock_daily='--stock-daily' in sys.argv)
+    results = fetch_all(do_stock_daily='--stock-daily' in sys.argv)
+    
+    # 标准输出给 command 模式推送
+    now = datetime.now().strftime('%Y-%m-%d %H:%M')
+    if mode == '盘中快照':
+        index_status = results.get('index', 'ERR')
+        sector_status = results.get('sectors', 'ERR')
+        limit_up = results.get('limit_up', 'ERR')
+        limit_down = results.get('limit_down', 'ERR')
+        elapsed = results.get('elapsed', 0)
+        print(f"盘中快照采集完成 ✅")
+        print(f"{now} 快照摘要：")
+        print(f"指数行情 & 盘口快照：{'✅' if index_status == 'OK' else '❌'}")
+        print(f"板块表现：{sector_status} 已入库")
+        print(f"涨停：{limit_up}")
+        print(f"跌停：{limit_down}")
+        print(f"耗时：{elapsed:.1f}s")
+    else:
+        print(f"收盘数据采集完成 ✅")
+        print(f"{now} 采集摘要：")
+        print(f"指数行情：{'✅' if results.get('index') == 'OK' else '❌'}")
+        print(f"板块表现：{results.get('sectors', 'ERR')} 已入库")
+        print(f"涨停：{results.get('limit_up', 'ERR')}")
+        print(f"跌停：{results.get('limit_down', 'ERR')}")
+        if 'stock_daily' in results:
+            print(f"个股日K：{results['stock_daily']}")
+        print(f"耗时：{elapsed:.1f}s")
