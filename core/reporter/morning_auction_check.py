@@ -221,42 +221,60 @@ def run():
     from utils.dao import get_db
     db = get_db()
 
-    # 最近一次有选股记录的交易日
+    # 最近3个有选股记录的交易日（近3日精选）
     cur = db.execute(
-        "SELECT DISTINCT trade_date FROM daily_picks WHERE is_pick=1 ORDER BY trade_date DESC LIMIT 1")
-    row = cur.fetchone()
-    if not row:
+        "SELECT DISTINCT trade_date FROM daily_picks WHERE is_pick=1 ORDER BY trade_date DESC LIMIT 3")
+    date_rows = cur.fetchall()
+    cur.close()
+    if not date_rows:
         lines.append('⚠️ 没有找到选股记录，请确认 `daily_picks` 表已有数据')
         lines.append('')
         print('\n'.join(lines))
         return
 
-    trade_date = row['trade_date']
-    try:
-        dt = datetime.strptime(trade_date, '%Y%m%d')
-        label = f'{dt.month}/{dt.day}'
-    except Exception:
-        label = trade_date
+    # 打标签
+    trade_dates = [r['trade_date'] for r in date_rows]
+    date_labels = {}
+    for td in trade_dates:
+        try:
+            dt = datetime.strptime(td, '%Y%m%d')
+            date_labels[td] = f'{dt.month}/{dt.day}'
+        except Exception:
+            date_labels[td] = td
 
-    # 获取候选股：仅取 is_pick=1（复盘推送的精选推荐），与复盘报告保持一致
-    cur = db.execute(
-        'SELECT code, name, total_score, highlights, data_tag, is_pick, `rank` FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
-        (trade_date,))
-    picks = cur.fetchall()
-    cur.close()
+    # 取近3日精选，按trade_date从近到远扫描，去重保留首次出现
+    all_picks = []
+    seen_codes = set()
+    for td in trade_dates:
+        cur = db.execute(
+            'SELECT code, name, total_score, highlights, data_tag, is_pick, `rank`, trade_date '
+            'FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
+            (td,))
+        for row in cur.fetchall():
+            code = row['code'].strip()
+            if code not in seen_codes:
+                seen_codes.add(code)
+                row['_date_label'] = date_labels[td]
+                row['_is_today_pick'] = (td == trade_dates[0])
+                all_picks.append(row)
+        cur.close()
 
-    if not picks:
-        lines.append('⚠️ 昨日无候选股数据')
+    if not all_picks:
+        lines.append('⚠️ 近3日无精选股数据')
         lines.append('')
         print('\n'.join(lines))
         return
 
-    lines.append(f'**📋 今日关注（{label}，{len(picks)}只）：**')
+    lines.append(f'**📋 近3日精选监控（{len(trade_dates)}个交易日，{len(all_picks)}只，去重）：**')
+    date_str_parts = []
+    for td in trade_dates:
+        date_str_parts.append(f'{date_labels[td]}({td[-2:]}日)')
+    lines.append(f'  {", ".join(date_str_parts)}')
     lines.append('')
 
     # ── 2. 逐只采集竞价数据 ──
     results = []
-    for p in picks:
+    for p in all_picks:
         code = p['code'].strip()
         name = p['name']
         score = p['total_score']
@@ -266,13 +284,18 @@ def run():
                 r = analyze_auction(q, code, score)
                 r['highlights'] = p.get('highlights', '')
                 r['data_tag'] = p.get('data_tag', '')
-                r['is_pick'] = p.get('is_pick', 0)
+                r['_date_label'] = p.get('_date_label', '')
+                r['_is_today_pick'] = p.get('_is_today_pick', False)
+                r['rank'] = p.get('rank', 999)
                 results.append(r)
             else:
                 results.append({
                     'code': code, 'name': name, 'score': score,
                     'verdict': '⚠️ 行情数据获取失败', 'level': 'warning',
                     'advice': '跳过', 'open': 0, 'open_change_pct': 0,
+                    '_date_label': p.get('_date_label', ''),
+                    '_is_today_pick': p.get('_is_today_pick', False),
+                    'rank': p.get('rank', 999),
                 })
         except Exception as e:
             logger.warning(f'{code} {name} 采集失败: {e}')
@@ -280,6 +303,9 @@ def run():
                 'code': code, 'name': name, 'score': score,
                 'verdict': f'⚠️ 数据异常', 'level': 'warning',
                 'advice': '跳过', 'open': 0, 'open_change_pct': 0,
+                '_date_label': p.get('_date_label', ''),
+                '_is_today_pick': p.get('_is_today_pick', False),
+                'rank': p.get('rank', 999),
             })
 
     # ── 3. 输出 ──
@@ -289,17 +315,34 @@ def run():
         print('\n'.join(lines))
         return
 
-    # 按竞价强弱排序（strong>good>neutral>weak>bad>warning）
+    # 排序：今日精选 > 昨日 > 前日，每组内按竞价强弱排序
     level_order = {'strong': 0, 'good': 1, 'neutral': 2, 'weak': 3, 'bad': 4, 'warning': 5}
-    results.sort(key=lambda r: level_order.get(r['level'], 9))
+    # 构造日期优先级映射：trade_dates[0]=今日, trade_dates[1]=昨日...
+    date_priority = {}
+    for idx, td in enumerate(trade_dates):
+        date_priority[date_labels.get(td, td)] = idx
+    results.sort(key=lambda r: (
+        date_priority.get(r.get('_date_label', ''), 9),
+        level_order.get(r['level'], 9),
+        r.get('rank', 999)
+    ))
 
     # 分批打印
+    prev_date = None
     for i, r in enumerate(results, 1):
+        # 日期分隔线
+        cur_date = r.get('_date_label', '')
+        if cur_date and cur_date != prev_date:
+            if r.get('_is_today_pick'):
+                lines.append(f'📅 **今日精选（{cur_date}）**')
+            else:
+                lines.append(f'📅 **{cur_date}精选**')
+            prev_date = cur_date
         # 评分+股票名
         score_str = f'[{r["score"]}分]' if r['score'] else ''
         line = f'{i}. **{r["name"]}({r["code"]})** {score_str}'
-        if r.get('is_pick'):
-            line += ' ⭐精选'
+        if r.get('_is_today_pick'):
+            line += ' ⭐今日精选'
         lines.append(line)
 
         # 竞价详情
