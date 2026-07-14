@@ -434,14 +434,6 @@ def run():
     # ════════════════════════════════════════
     lines.append('**1️⃣ 大盘概况**')
 
-    # 获取 push2 实时数据（含成交额、涨跌家数、资金流）
-    push2 = None
-    try:
-        from core.fetcher.push2_market import fetch_push2_market_data
-        push2 = fetch_push2_market_data()
-    except Exception as e:
-        logger.warning(f'push2 模块导入或调用失败: {e}')
-
     # 实时指数一行合并
     idx_config = [
         ('000001', '上证'),
@@ -452,15 +444,6 @@ def run():
     idx_parts = []
     for code, name in idx_config:
         try:
-            # 上证/深证优先使用 push2 数据
-            if push2 and code == '000001':
-                arrow = '🟢' if push2['sh_index_change'] >= 0 else '🔴'
-                idx_parts.append(f'{arrow} {name} {push2["sh_index_change"]:+.2f}%')
-                continue
-            if push2 and code == '399001':
-                arrow = '🟢' if push2['sz_index_change'] >= 0 else '🔴'
-                idx_parts.append(f'{arrow} {name} {push2["sz_index_change"]:+.2f}%')
-                continue
             idx = fetch_index(code)
             arrow = '🟢' if idx['change_pct'] >= 0 else '🔴'
             idx_parts.append(f'{arrow} {name} {idx["change_pct"]:+.2f}%')
@@ -468,36 +451,87 @@ def run():
             idx_parts.append(f'⚠️ {name}')
     lines.append(f'  {" / ".join(idx_parts)}')
 
+    # ── 实时成交额（新浪指数数据）──
+    realtime_amt = None
+    try:
+        import urllib.request
+        # 上证+深证实时成交额
+        url = 'https://hq.sinajs.cn/list=s_sh000001,s_sz399001'
+        req = urllib.request.Request(url, headers={'Referer': 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0'})
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = resp.read().decode('gbk')
+        # 解析成交额：name,price,chg_amt,chg_pct,volume(手),amount(元)
+        parts = data.split(';')
+        total_amt = 0
+        for p in parts:
+            if ',' in p:
+                fields = p.split('"')[1].split(',')
+                if len(fields) >= 6:
+                    amt_str = fields[5].strip()
+                    if amt_str and amt_str.replace('.', '').isdigit():
+                        # 新浪 amount 单位是万元，转换为亿元
+                        total_amt += float(amt_str) / 1e4
+    except Exception as e:
+        logger.warning(f'获取站内实时成交额失败: {e}')
+
     # ── 盘面摘要（涨跌家数 + 成交额 + 资金流）──
-    if push2:
-        rise, fall, flat = push2['rise_total'], push2['fall_total'], push2['flat_total']
-        amt, main_flow, retail_flow = push2['amount_total'], push2['main_flow'], push2['retail_flow']
+    # 实时数据：优先 push2；失败则降级为 db 缓存
+    rise, fall, flat, amt, main_flow, retail_flow = None, None, None, None, None, None
+    try:
+        from core.fetcher.push2_market import fetch_push2_market_data
+        p2 = fetch_push2_market_data()
+        if p2:
+            rise, fall, flat = p2['rise_total'], p2['fall_total'], p2['flat_total']
+            amt = p2['amount_total']
+            main_flow = p2['main_flow']
+            retail_flow = p2['retail_flow']
+    except Exception as e:
+        logger.warning(f'push2 实时数据获取失败: {e}')
 
-        # 涨跌家数行：跌多时跌在前，涨多时涨在前
-        if rise >= fall:
-            rf_line = f'🟢 涨{rise}家 🔴 跌{fall}家 ➖{flat}家'
+    # 如果 push2 没有成交额，用新浪实时成交额
+    if amt is None and realtime_amt:
+        amt = realtime_amt
+
+    # 如果 push2 没有涨跌家数，从 db 缓存补
+    if rise is None:
+        try:
+            ms = _get_market_summary_cached()
+            if ms:
+                rise = ms.get('up_count') or 0
+                fall = ms.get('down_count') or 0
+                flat = ms.get('flat_count') or 0
+                if amt is None and ms.get('total_amount'):
+                    amt = ms['total_amount'] / 1e8
+        except Exception as e:
+            logger.warning(f'市场汇总缓存获取失败: {e}')
+
+    # 输出盘面摘要行
+    if rise is not None and fall is not None:
+        flat_str = flat or 0
+        if (rise or 0) >= (fall or 0):
+            rf_line = f'🟢 涨{rise}家 🔴 跌{fall}家 ➖{flat_str}家'
         else:
-            rf_line = f'🔴 跌{fall}家 🟢 涨{rise}家 ➖{flat}家'
+            rf_line = f'🔴 跌{fall}家 🟢 涨{rise}家 ➖{flat_str}家'
         lines.append(f'  📊 {rf_line}')
-
-        # 资金流行
-        main_icon = '🟢' if main_flow >= 0 else '🔴'
-        # 散户为正标红（追涨不利信号），为负标绿（散户恐慌卖出可能机会）
-        retail_icon = '🔴' if retail_flow > 0 else '🟢'
-        main_str = f'+{main_flow:.0f}亿' if main_flow > 0 else (f'{main_flow:.0f}亿' if main_flow < 0 else '0亿')
-        retail_str = f'+{retail_flow:.0f}亿' if retail_flow > 0 else (f'{retail_flow:.0f}亿' if retail_flow < 0 else '0亿')
-        lines.append(f'  💰 成交额 {amt:.0f}亿 ｜ {main_icon} 主力 {main_str} ｜ {retail_icon} 散户 {retail_str}')
+    
+    # 资金流行（有成交额就输出）
+    if amt is not None:
+        if main_flow is not None:
+            main_icon = '🟢' if main_flow >= 0 else '🔴'
+            main_str = f'+{main_flow:.0f}亿' if main_flow > 0 else (f'{main_flow:.0f}亿' if main_flow < 0 else '0亿')
+        if retail_flow is not None:
+            retail_icon = '🔴' if retail_flow > 0 else '🟢'
+            retail_str = f'+{retail_flow:.0f}亿' if retail_flow > 0 else (f'{retail_flow:.0f}亿' if retail_flow < 0 else '0亿')
+        if main_flow is not None and retail_flow is not None:
+            lines.append(f'  💰 成交额 {amt:.0f}亿 ｜ {main_icon} 主力 {main_str} ｜ {retail_icon} 散户 {retail_str}')
+        else:
+            lines.append(f'  💰 成交额 {amt:.0f}亿')
 
     # 风险提示行（结合大盘涨跌 + 资金流）
     risks = []
     try:
-        # 使用 push2 或新浪获取上证涨跌幅用于风险判断
-        sh_chg = None
-        if push2:
-            sh_chg = push2['sh_index_change']
-        else:
-            sh_idx = fetch_index('000001')
-            sh_chg = sh_idx['change_pct']
+        sh_idx = fetch_index('000001')
+        sh_chg = sh_idx['change_pct']
 
         if sh_chg is not None:
             if sh_chg < -1.5:

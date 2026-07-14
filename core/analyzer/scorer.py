@@ -27,7 +27,7 @@ import re
 import subprocess
 
 from utils.logger import setup_logger
-from utils.fundamental import get_latest_financial, evaluate_fundamental, get_risk_flags
+from utils.fundamental import get_latest_financial, evaluate_fundamental
 
 # ─── 权重配置（从 JSON 读取） ───
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -855,7 +855,6 @@ def score_candidate(code: str, name: str) -> Dict:
     - 趋势位置  20分（均线/MA20距离/节奏）
     - 大盘安全  10分（大盘环境+情绪）
     - 位置评估  +15分（20日区间低位加分，高位不加分）
-    - 风险扣分  -15分
 
     注意：收盘后从DB取今日数据，不再调新浪实时接口（避免超时）。
     位置评分独立加在总分后，仅补充不稀释其他维度权重。
@@ -863,7 +862,7 @@ def score_candidate(code: str, name: str) -> Dict:
     report = {
         'code': code, 'name': name,
         'total_score': 0, 'grade': '',
-        'breakdown': {}, 'risks': [],
+        'breakdown': {},
         'position_advice': ''
     }
 
@@ -901,11 +900,6 @@ def score_candidate(code: str, name: str) -> Dict:
     max_pos = _W.get('position_bonus', 15)
     report['breakdown']['位置评估'] = {'score': pos_score, 'max': max_pos, 'details': [f'20日区间位置评分: {pos_score}/{max_pos}']}
 
-    # 7. 风险扣分
-    risk = get_risk_flags(code)
-    if risk['has_risk']:
-        report['risks'] = risk['items']
-
     # 总分（按权重加权）
     w = _W  # 配置权重
     # 各维度原始分 / 各自满分 × 配置权重
@@ -918,11 +912,6 @@ def score_candidate(code: str, name: str) -> Dict:
         + min(1, max(0, pos_score) / max_pos) * w['position_bonus']
     )
     total = weighted
-    if report['risks']:
-        max_penalty = w.get('risk_penalty', 15)
-        penalty = min(len(report['risks']) * (max_penalty / 3), max_penalty)
-        total -= penalty
-        report['breakdown']['风险扣分'] = {'penalty': -round(penalty, 1)}
 
     report['total_score'] = max(0, min(100, round(total, 1)))
 
@@ -986,9 +975,7 @@ def format_score_report(reports: list, title: str = '') -> str:
                       ('趋势位置', 20), ('大盘安全', 10)]:
             v = bd.get(k, {})
             dims.append(f"{k[:2]}{v.get('score', 0)}/{m}")
-        rk = bd.get('风险扣分', {})
-        if rk and rk.get('penalty', 0) < 0:
-            dims.append(f"风险{rk['penalty']}")
+
         lines.append(f"  {' | '.join(dims)}")
 
         # 详细说明（每个维度取第一条）
@@ -998,8 +985,7 @@ def format_score_report(reports: list, title: str = '') -> str:
             if det:
                 lines.append(f"  {label} {' · '.join(det[:2])}")
 
-        if r.get('risks'):
-            lines.append(f"  ⚠️ {'; '.join(r['risks'][:2])}")
+
 
         lines.append(f"  💡 {r['position_advice']}")
         lines.append("")

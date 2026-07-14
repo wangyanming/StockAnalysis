@@ -62,6 +62,7 @@ def fetch_push2_market_data():
         result = subprocess.run([
             'curl', '-s',
             '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            '-H', 'Referer: https://quote.eastmoney.com/',
             '-m', '5',
             PUSH2_URL,
         ], capture_output=True, text=True, timeout=10)
