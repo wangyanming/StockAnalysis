@@ -71,8 +71,6 @@ from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 from core.analyzer.scorer import build_candidate_pool
 from core.fetcher.daily_fetch import fetch_all
 from core.analyzer.close_task import daily_close_task
-from core.fetcher.fetch_sector_ths import ensure_table
-from utils.sector_history import ensure_table as se
 print('   ✅ 全部模块导入成功')
 " 2>/dev/null
 
