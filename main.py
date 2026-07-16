@@ -16,9 +16,7 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from stock_analysis_api import StockDataFetcher
-from strategy import ValueStrategy, MomentumStrategy
 from alert_system import AlertSystem
-from visualization import StockVisualizer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,11 +32,6 @@ class StockAnalysisApp:
     def __init__(self):
         self.fetcher = StockDataFetcher()
         self.alert_system = AlertSystem()
-        self.visualizer = StockVisualizer()
-        self.strategies = {
-            "value": ValueStrategy(),
-            "momentum": MomentumStrategy(),
-        }
 
     def clear(self):
         os.system("cls" if os.name == "nt" else "clear")
