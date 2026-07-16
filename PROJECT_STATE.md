@@ -8,7 +8,37 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
-## 当前阶段：QA Subagent 构建完成 ✓
+## 当前阶段：统一展示日期规则（已完成）
+
+### 已发现问题
+- **不同接口
+
+**DAO 单连接模式导致链式崩溃**（2026-07-16）：
+- `get_db()` 返回全局唯一连接，某次查询异常后连接损坏
+- 后续所有 DB 请求复用损坏连接，全部报 `InterfaceError (0,'')`
+- 根因：单例连接不支持多线程复用，无连接重建机制
+- 修复方向：`utils/dao.py` 改为连接池（`DBUtils.PooledDB`）
+- QA 也缺失了并发/连续请求测试场景（已在 SKILL.md 11.5 补充）
+
+### 正在处理（2026-07-16）
+
+#### 1. MySQL 连接池改造 ✅ 已完成
+- `utils/dao.py` 单连接 → `DBUtils.PooledDB`，已提交 `cbb2e34`
+
+#### 2. 统一展示日期规则 ✅ 已完成
+- 需求文档：`docs/requirements/REQ-20260716-02-统一展示日期规则.md`
+- 方案设计：`docs/design/DES-20260716-02-统一展示日期规则.md`
+- 新增 `utils/date_utils.py` 含 `get_display_date()` + `_is_trade_date()`
+  - 规则：17:00前→T-1，17:00后→T，非交易日往前递推最多30步
+- 修改 6 个 API 默认日期逻辑：
+  - `api_market_overview`：从新浪实时改为 `index_quotes` 表按 `get_display_date()` 查
+  - `api_market_summary`：默认日期走 `get_display_date()`
+  - `api_sectors`：从 `MAX(record_date)` 改为 `get_display_date()`
+  - `api_limit_up`/`api_limit_down`/`api_limit_up_industry`：从 `now.strftime` 改为 `get_display_date()`
+- `get_market_summary()` 保持 `date_str` 参数兼容性（传参则用参数，不传走 `get_display_date()`）
+
+### QA 规范补充（2026-07-16）
+- `skills/engineering-rules/SKILL.md` 第 11.5 节新增：Web 服务类改动必须覆盖并发/连续请求测试
 
 ## 新增模块
 | 模块 | 路径 | 说明 | 状态 |
@@ -26,6 +56,9 @@
 | `core/reporter/close_report_tpl.py` | 第5段改为低吸抄底引擎输出格式（低吸抄底TOP5 + 放量反转组 + 操作计划） | ✅ 2026-06-04 |
 | `docs/requirements/REQ-20260604-01-低吸抄底选股引擎.md` | **新增** 需求文档 | ✅ 2026-06-04 |
 | `docs/design/DES-20260604-01-低吸抄底选股引擎.md` | **新增** 方案设计 | ✅ 2026-06-04 |
+| `utils/date_utils.py` | **新增** `get_display_date()` + `_is_trade_date()` | ✅ 2026-07-16 |
+| `web_server.py` | 6 个 API 日期逻辑统一改为 `get_display_date()` | ✅ 2026-07-16 |
+| `utils/stock_analysis_api.py` | `get_market_summary()` 内部日期改用 `get_display_date()` | ✅ 2026-07-16 |
 
 ## 已改文件 (2026-06-02)
 
@@ -515,6 +548,14 @@
 - [ ] 持仓还原分析模块（分析游资持仓及成本）
 - [ ] lhb_fetcher 集成到 daily_fetch.py 的定时采集流程
 - [ ] 前端龙虎榜展示（Web仪表盘）
+
+## 最新变更 (2026-07-16)
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `docs/requirements/REQ-20260715-01-Web服务前端需求.md` | **更新至 v2.1** — 增加 UI 规范章节、板块排行字段说明、指数卡片 grid 5列规范 | ✅ |
+| `docs/design/web_prototype.html` | **更新** — 左侧菜单、指数卡片 grid 5列、板块排行纵向双表、涨跌复盘分页排序 | ✅ |
+| `docs/design/DES-20260716-01-Web前端原型技术方案.md` | **新增** — Web 前端原型技术方案，含架构设计、API 依赖、分页排序策略、新增 `/api/picks` 接口说明、开发计划 | ✅ |
 
 ## 最新变更 (2026-07-14)
 

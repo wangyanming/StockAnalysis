@@ -253,7 +253,20 @@ StockAnalysis/
 - ❌ 不通过 → 开发者修复后重新提测
 - QA 有否决权，测试不通过不能提交
 
-### 11.5 QA Subagent 所在路径
+### 11.5 QA 测试覆盖要求
+
+#### 11.5.1 并发/连续请求测试（新增 2026-07-16）
+
+❗ **Web 服务类改动，QA 必须额外覆盖：**
+
+- **连续请求测试**：同一 API 连续调用 ≥5 次，全部返回 200，无连接错误
+- **并发请求测试**：模拟 10 线程同时请求同一 API，全部返回 200，无 `InterfaceError` / `Packet sequence number wrong` 等连接异常
+- **跨接口连续请求**：连续调用不同 API（market-overview → sectors → limit-up → picks）≥3 轮，全部成功
+- **连接异常恢复测试**：模拟连接断开场景（如 kill MySQL 连接后恢复），后续请求能自动重建连接
+
+> 原因：2026-07-16 生产发现 `dao.py` 单连接模式下连续请求导致连接损坏，后续全部 `Failed to fetch`，但 QA 单次请求均通过。
+
+### 11.6 QA Subagent 所在路径
 `skills/qa-subagent/SKILL.md`
 
 ## 12. 文档更新约定（速查表）

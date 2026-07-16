@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 股票分析系统</title>
+<style>
+:root {
+  --bg: #f0f2f5;
+  --card: #fff;
+  --primary: #667eea;
+  --primary-dark: #4a5bc7;
+  --text: #333;
+  --text-secondary: #999;
+  --up: #ef4444;
+  --down: #22c55e;
+  --menu-bg: #16213e;
+  --menu-hover: #1a2a4a;
+  --menu-active: #667eea;
+  --border: #e8e8e8;
+  --radius: 10px;
+  --danger: #f56c6c;
+  --warning: #e6a23c;
+  --success: #67c23a;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font: 15px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+}
+/* ── 左侧菜单 ── */
+.sidebar {
+  width: 200px;
+  min-height: 100vh;
+  background: var(--menu-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.sidebar .logo {
+  padding: 24px 18px 20px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.sidebar .nav-item {
+  padding: 14px 20px;
+  color: rgba(255,255,255,.65);
+  cursor: pointer;
+  font-size: 15px;
+  transition: .15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left: 3px solid transparent;
+}
+.sidebar .nav-item:hover { background: var(--menu-hover); color: #fff; }
+.sidebar .nav-item.active {
+  background: rgba(102,126,234,.15);
+  color: #fff;
+  border-left-color: var(--menu-active);
+}
+/* ── 右侧内容 ── */
+.main {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+.module { display: none; }
+.module.active { display: block; }
+/* ── 卡片 ── */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.card-title {
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.card-body { padding: 0; overflow-x: auto; }
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  background: #f0f2f5;
+  color: #666;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+/* ── 指数卡片 grid ── */
+.index-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 16px 18px;
+}
+.index-card {
+  padding: 14px 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  text-align: center;
+}
+.index-card .idx-name { font-size: 13px; color: var(--text-secondary); margin-bottom: 2px; }
+.index-card .idx-price { font-size: 20px; font-weight: 700; margin: 4px 0; }
+.index-card .idx-change { font-size: 14px; font-weight: 600; }
+/* ── 统计网格 ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 16px 18px;
+}
+.stat-item { text-align: center; }
+.stat-item .stat-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+.stat-item .stat-value { font-size: 22px; font-weight: 700; }
+.stat-item .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+/* ── 板块排行上下表 ── */
+.board-row { display: flex; flex-direction: column; gap: 0; }
+.board-col:first-child { border-bottom: 1px solid var(--border); }
+/* ── 表格 ── */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 14px; text-align: right; border-bottom: 1px solid #f5f5f5; }
+th { background: #fafafa; font-weight: 600; color: #555; font-size: 13px; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td:first-child { font-weight: 600; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--primary); }
+.up { color: var(--up); }
+.down { color: var(--down); }
+/* ── 筛选栏 ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  flex-wrap: wrap;
+}
+.filter-bar label { font-size: 13px; font-weight: 600; color: #555; }
+.filter-bar select, .filter-bar input {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.filter-bar button {
+  padding: 6px 16px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: .15s;
+}
+.filter-bar button:hover { background: var(--primary-dark); }
+/* ── 分页 ── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.pagination .page-btns { display: flex; gap: 4px; align-items: center; }
+.pagination .page-btns button {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: .1s;
+}
+.pagination .page-btns button:hover { border-color: var(--primary); color: var(--primary); }
+.pagination .page-btns button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pagination .page-btns button:disabled { opacity: .4; cursor: default; }
+.pagination .page-size select { padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+/* ── Loading / Error ── */
+.loading {
+  text-align: center;
+  padding: 30px 18px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.loading .spinner {
+  display: inline-block;
+  width: 20px; height: 20px;
+  border: 2px solid #eee;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-msg {
+  text-align: center;
+  padding: 20px 18px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.error-msg button {
+  margin-left: 8px;
+  padding: 2px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 12px;
+}
+.error-msg button:hover { background: #fff5f5; }
+/* ── 选股卡片（已弃用，改为表格） ── */
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo">📊 股票分析系统</div>
+  <div class="nav-item active" onclick="switchModule('overview')">
+    📈 大盘概览
+  </div>
+  <div class="nav-item" onclick="switchModule('limitup')">
+    📉 涨跌复盘
+  </div>
+  <div class="nav-item" onclick="switchModule('picks')">
+    📋 选股追踪
+  </div>
+</div>
+
+<div class="main">
+  <!-- ==================== 大盘概览 ==================== -->
+  <div id="module-overview" class="module active">
+
+    <!-- 指数看板 -->
+    <div class="card">
+      <div class="card-title">📈 主要指数</div>
+      <div id="index-grid" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+
+    <!-- 市场总结 -->
+    <div class="card">
+      <div class="card-title">📊 今日市场总结</div>
+      <div id="market-summary" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+
+    <!-- 板块排行 TOP10 -->
+    <div class="card">
+      <div class="card-title">📈 涨幅居前 TOP10 <span class="badge">按涨跌幅排序</span></div>
+      <div id="sectors-up" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📉 跌幅居前 TOP10 <span class="badge">按涨跌幅排序</span></div>
+      <div id="sectors-down" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== 涨跌复盘 ==================== -->
+  <div id="module-limitup" class="module">
+
+    <div class="card">
+      <div class="filter-bar">
+        <label>📅 日期</label>
+        <select id="lu-date"></select>
+        <button onclick="loadLimitUp()">查询</button>
+      </div>
+    </div>
+
+    <!-- 涨停 -->
+    <div class="card">
+      <div class="card-title">🚀 涨停列表 <span class="badge" id="lu-up-count"></span></div>
+      <div id="lu-up-body" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+      <div id="lu-up-pagination" class="pagination" style="display:none"></div>
+    </div>
+
+    <!-- 跌停 -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">💀 跌停列表 <span class="badge" id="lu-down-count"></span></div>
+      <div id="lu-down-body" class="card-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+      <div id="lu-down-pagination" class="pagination" style="display:none"></div>
+    </div>
+
+    <!-- 涨停行业分布 -->
+    <div class="card">
+      <div class="card-title">🏭 涨停行业分布</div>
+      <div class="card-body" id="industry-body">
+        <div class="loading"><span class="spinner"></span>加载中...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== 选股追踪 ==================== -->
+  <div id="module-picks" class="module">
+
+    <div class="card">
+      <div class="filter-bar">
+        <label>📅 日期</label>
+        <select id="pk-date"></select>
+        <label>📁 维度</label>
+        <select id="pk-tag">
+          <option value="all">全部</option>
+          <option value="limitup">涨停接力</option>
+          <option value="range">区间潜伏</option>
+        </select>
+        <button onclick="loadPicks()">查询</button>
+      </div>
+    </div>
+
+    <div id="pk-body">
+      <div class="loading"><span class="spinner"></span>加载中...</div>
+    </div>
+    <div id="pk-pagination" class="pagination" style="display:none"></div>
+
+  </div>
+</div>
+
+<script>
+// ====== 配置 ======
+// API_BASE: 同源访问 (8899端口web_server) 或用绝对路径
+// 如果当前在8899端口则同源，否则跨域请求8899
+const API_BASE = (location.port === '8899' || location.port === '443' || location.port === '80')
+  ? ''
+  : location.protocol + '//' + location.hostname + ':8899';
+const LU_SORT = { field: null, order: 'asc', clicks: 0 };
+const LD_SORT = { field: null, order: 'asc', clicks: 0 };
+const LU_STATE = { page: 1, pageSize: 10 };
+const LD_STATE = { page: 1, pageSize: 10 };
+let autoRefreshId = null;
+
+// ====== 工具函数 ======
+function fmt(n) { return (n || 0).toLocaleString(); }
+function fmtPct(n) { return (n > 0 ? '+' : '') + (n || 0).toFixed(2) + '%'; }
+function fmtMoney(v) {
+  v = parseFloat(v) || 0;
+  if (v >= 100000000) return (v / 100000000).toFixed(2) + '亿';
+  return Math.round(v / 10000) + '万';
+}
+function fmtTime(t) {
+  if (!t) return '-';
+  const s = String(t).padStart(6, '0');
+  return s.slice(0, 2) + ':' + s.slice(2, 4);
+}
+function cls(n) { return (n || 0) > 0 ? 'up' : 'down'; }
+function api(path) { return API_BASE + path; }
+
+// 成交额单位格式化：原始单位 元
+// n >= 1万亿(10000亿) -> X.XX万亿，否则 -> X,XXX亿（千分位）
+function fmtAmount(n) {
+  n = n || 0;
+  if (n >= 1e12) {
+    // 万亿级
+    return (n / 1e12).toFixed(2) + '万亿';
+  } else {
+    // 亿级，加千分位
+    return Math.round(n / 1e8).toLocaleString() + '亿';
+  }
+}
+
+async function fetchJSON(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return resp.json();
+}
+
+function html(strs) { return strs.join(''); }
+
+// ====== 模块切换 ======
+function switchModule(name) {
+  document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('module-' + name).classList.add('active');
+  document.querySelector(`.nav-item[onclick*="'${name}'"]`).classList.add('active');
+
+  if (autoRefreshId) { clearInterval(autoRefreshId); autoRefreshId = null; }
+  if (name === 'overview') {
+    loadOverview();
+    autoRefreshId = setInterval(loadOverview, 60000);
+  } else if (name === 'limitup') {
+    loadLimitUpDates();
+  } else if (name === 'picks') {
+    loadPicksDates();
+  }
+}
+
+// ============================================================
+// 大盘概览
+// ============================================================
+async function loadOverview() {
+  Promise.all([
+    loadIndexes(),
+    loadMarketSummary(),
+    loadSectors()
+  ]).catch(() => {});
+}
+
+async function loadIndexes() {
+  const el = document.getElementById('index-grid');
+  try {
+    const d = await fetchJSON(api('/api/market-overview'));
+    const idxObj = d.indexes || {};
+    const idxList = Object.keys(idxObj).map(k => ({ ...idxObj[k], key: k }));
+    if (!idxList.length) { el.innerHTML = '<div class="loading">暂无指数数据</div>'; return; }
+    el.innerHTML = '<div class="index-grid">' + idxList.map(idx =>
+      `<div class="index-card">
+        <div class="idx-name">${idx.name || ''}</div>
+        <div class="idx-price">${fmt(idx.current_price || idx.price || idx.latest || 0)}</div>
+        <div class="idx-change ${cls(idx.change_pct || idx.change || 0)}">${fmtPct(idx.change_pct || idx.change || 0)}</div>
+      </div>`
+    ).join('') + '</div>';
+  } catch(e) {
+    el.innerHTML = `<div class="error-msg">❌ 指数加载失败: ${e.message}</div>`;
+  }
+}
+
+async function loadMarketSummary() {
+  const el = document.getElementById('market-summary');
+  try {
+    const d = await fetchJSON(api('/api/market-summary'));
+    const amount = d.total_amount || d.amount || 0;
+    const prev = d.prev_amount || 0;
+    const diff = amount - prev;
+    el.innerHTML = `<div class="stat-grid">
+      <div class="stat-item">
+        <div class="stat-label">💰 成交额</div>
+        <div class="stat-value">${fmtAmount(amount)}</div>
+        <div class="stat-sub">较昨日 <span class="${cls(-diff)}">${diff >= 0 ? '+' : ''}${fmtAmount(diff)}</span></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">📈 涨跌家数</div>
+        <div class="stat-value"><span class="up">↑ ${fmt(d.rise_count || 0)}</span> · <span class="down">↓ ${fmt(d.fall_count || 0)}</span></div>
+      </div>
+    </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="error-msg">❌ 市场总结加载失败: ${e.message}</div>`;
+  }
+}
+
+async function loadSectors() {
+  try {
+    const d = await fetchJSON(api('/api/sectors'));
+    if (!d.sectors || !d.sectors.length) {
+      document.getElementById('sectors-up').innerHTML = '<div class="loading">暂无板块数据</div>';
+      document.getElementById('sectors-down').innerHTML = '<div class="loading">暂无板块数据</div>';
+      return;
+    }
+    const sorted = [...d.sectors].sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0));
+    const up = sorted.slice(0, 10);
+    const down = sorted.slice(-10).reverse();
+
+    document.getElementById('sectors-up').innerHTML = renderSectorTable(up);
+    document.getElementById('sectors-down').innerHTML = renderSectorTable(down);
+  } catch(e) {
+    document.getElementById('sectors-up').innerHTML = `<div class="error-msg">❌ 板块加载失败: ${e.message}</div>`;
+    document.getElementById('sectors-down').innerHTML = `<div class="error-msg">❌ 板块加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderSectorTable(list) {
+  if (!list.length) return '<div class="loading">暂无数据</div>';
+  return `<table>
+    <tr><th>板块名称</th><th>涨跌幅</th><th>成交额</th><th>净流入</th><th>上涨家数</th><th>下跌家数</th></tr>
+    ${list.map(s => `<tr>
+      <td>${s.name || s.sector_name || ''}</td>
+      <td class="${cls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+      <td>${fmt(Math.round((s.amount || 0) / 100000000))}亿</td>
+      <td class="${cls(s.net_inflow || 0)}">${(s.net_inflow || 0) > 0 ? '+' : ''}${fmt(Math.round((s.net_inflow || 0) / 100000000))}亿</td>
+      <td>${fmt(s.rise_count || 0)}</td>
+      <td>${fmt(s.fall_count || 0)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+// ============================================================
+// 涨跌复盘
+// ============================================================
+async function loadLimitUpDates() {
+  try {
+    const d = await fetchJSON(api('/api/limit-up/dates'));
+    const dates = d.dates || [];
+    const defaultDate = d.default_date || (dates[0] || '');
+    const sel = document.getElementById('lu-date');
+    sel.innerHTML = dates.map(dd => `<option value="${dd}"${dd === defaultDate ? ' selected' : ''}>${dd.slice(0,4)}-${dd.slice(4,6)}-${dd.slice(6)}</option>`).join('');
+    loadLimitUp();
+  } catch(e) {
+    document.getElementById('lu-up-body').innerHTML = `<div class="error-msg">❌ 日期加载失败: ${e.message}</div>`;
+  }
+}
+
+async function loadLimitUp() {
+  const date = document.getElementById('lu-date').value;
+  if (!date) return;
+  try {
+    const [up, down, industry] = await Promise.all([
+      fetchJSON(api(`/api/limit-up?date=${date}`)),
+      fetchJSON(api(`/api/limit-down?date=${date}`)).catch(() => ({ stocks: [] })),
+      fetchJSON(api(`/api/limit-up/industry?date=${date}`)).catch(() => ({ industries: [] }))
+    ]);
+    renderLimitUpTable(up.stocks || up, 'lu-up-body', 'lu-up-pagination', 'lu-up-count', LU_STATE, LU_SORT, true);
+    renderLimitUpTable(down.stocks || [], 'lu-down-body', 'lu-down-pagination', 'lu-down-count', LD_STATE, LD_SORT, false);
+    renderIndustryDist(industry.industries || []);
+  } catch(e) {
+    document.getElementById('lu-up-body').innerHTML = `<div class="error-msg">❌ 涨停数据加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderIndustryDist(industries) {
+  const el = document.getElementById('industry-body');
+  if (!industries.length) {
+    el.innerHTML = '<div class="loading">暂无行业分布数据</div>';
+    return;
+  }
+  el.innerHTML = `<table style="font-size:13px">
+    <tr><th>行业</th><th>涨停数</th><th>代表个股</th></tr>
+    ${industries.map(ind => `<tr>
+      <td>${ind.industry || ind.name || '-'}</td>
+      <td>${ind.count || 0}只</td>
+      <td>${(ind.stocks || ind.representative_stocks || []).join('、') || '-'}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+let _luCache = [];
+let _ldCache = [];
+
+function renderLimitUpTable(stocks, bodyId, pagId, countId, state, sortState, isUp) {
+  const cacheStocks = isUp ? (_luCache = stocks) : (_ldCache = stocks);
+  document.getElementById(countId).textContent = `共 ${stocks.length} 只`;
+
+  if (!stocks.length) {
+    document.getElementById(bodyId).innerHTML = '<div class="loading">暂无数据</div>';
+    document.getElementById(pagId).style.display = 'none';
+    return;
+  }
+
+  // 排序
+  let sorted = [...stocks];
+  if (sortState.field) {
+    sorted.sort((a, b) => {
+      let va = parseFloat(a[sortState.field]) || 0;
+      let vb = parseFloat(b[sortState.field]) || 0;
+      return sortState.order === 'asc' ? va - vb : vb - va;
+    });
+    // 第三次点击恢复默认
+    if (sortState.clicks >= 2) sorted = [...stocks];
+  }
+
+  // 分页
+  const total = sorted.length;
+  const totalPages = Math.ceil(total / state.pageSize);
+  if (state.page > totalPages) state.page = totalPages || 1;
+  if (state.page < 1) state.page = 1;
+  const start = (state.page - 1) * state.pageSize;
+  const pageData = sorted.slice(start, start + state.pageSize);
+
+  if (isUp) {
+    // 涨停表：10列
+    document.getElementById(bodyId).innerHTML = `<table style="font-size:13px">
+      <tr>
+        <th class="sortable" onclick="sortLU('lu','code')">代码</th>
+        <th class="sortable" onclick="sortLU('lu','name')">名称</th>
+        <th class="sortable" onclick="sortLU('lu','board_times')">连板</th>
+        <th class="sortable" onclick="sortLU('lu','change_pct')">涨幅</th>
+        <th class="sortable" onclick="sortLU('lu','price')">价格</th>
+        <th class="sortable" onclick="sortLU('lu','turnover_rate')">换手</th>
+        <th>封板时间</th>
+        <th class="sortable" onclick="sortLU('lu','bomb_times')">开板</th>
+        <th class="sortable" onclick="sortLU('lu','seal_fund')">封板资金</th>
+        <th>行业</th>
+      </tr>
+      ${pageData.map(s => `<tr>
+        <td>${s.code || ''}</td>
+        <td>${s.board_times >= 3 ? '🔥' : ''}${s.name || ''}</td>
+        <td style="font-weight:${s.board_times >= 3 ? 600 : 400}">${s.board_times != null ? s.board_times + '板' : '-'}</td>
+        <td class="${cls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+        <td>${s.price != null ? s.price.toFixed(2) : '-'}</td>
+        <td>${s.turnover_rate != null ? s.turnover_rate.toFixed(2) + '%' : '-'}</td>
+        <td>${fmtTime(s.seal_first_time)}</td>
+        <td>${s.bomb_times != null ? s.bomb_times + '次' : '-'}</td>
+        <td>${s.seal_fund != null ? fmtMoney(s.seal_fund) : '-'}</td>
+        <td>${s.industry || '-'}</td>
+      </tr>`).join('')}
+    </table>`;
+  } else {
+    // 跌停表：8列
+    document.getElementById(bodyId).innerHTML = `<table style="font-size:13px">
+      <tr>
+        <th class="sortable" onclick="sortLU('ld','code')">代码</th>
+        <th class="sortable" onclick="sortLU('ld','name')">名称</th>
+        <th class="sortable" onclick="sortLU('ld','change_pct')">涨幅</th>
+        <th class="sortable" onclick="sortLU('ld','price')">价格</th>
+        <th class="sortable" onclick="sortLU('ld','turnover_rate')">换手</th>
+        <th>封板时间</th>
+        <th class="sortable" onclick="sortLU('ld','seal_fund')">封板资金</th>
+        <th>行业</th>
+      </tr>
+      ${pageData.map(s => `<tr>
+        <td>${s.code || ''}</td>
+        <td>${s.name || ''}</td>
+        <td class="${cls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+        <td>${s.price != null ? s.price.toFixed(2) : '-'}</td>
+        <td>${s.turnover_rate != null ? s.turnover_rate.toFixed(2) + '%' : '-'}</td>
+        <td>${fmtTime(s.seal_first_time)}</td>
+        <td>${s.seal_fund != null ? fmtMoney(s.seal_fund) : '-'}</td>
+        <td>${s.industry || '-'}</td>
+      </tr>`).join('')}
+    </table>`;
+  }
+
+  // 分页控件
+  const pagEl = document.getElementById(pagId);
+  pagEl.style.display = 'flex';
+  pagEl.innerHTML = `<span>共 ${total} 条，第 ${state.page}/${totalPages} 页</span>
+    <div class="page-btns">
+      <button ${state.page <= 1 ? 'disabled' : ''} onclick="goPage('${isUp ? 'lu' : 'ld'}',1)">首页</button>
+      <button ${state.page <= 1 ? 'disabled' : ''} onclick="goPage('${isUp ? 'lu' : 'ld'}',${state.page - 1})">‹</button>
+      ${renderPageBtns(state.page, totalPages, isUp ? 'lu' : 'ld')}
+      <button ${state.page >= totalPages ? 'disabled' : ''} onclick="goPage('${isUp ? 'lu' : 'ld'}',${state.page + 1})">›</button>
+      <button ${state.page >= totalPages ? 'disabled' : ''} onclick="goPage('${isUp ? 'lu' : 'ld'}',${totalPages})">末页</button>
+    </div>
+    <div class="page-size">
+      每页 <select onchange="changePageSize('${isUp ? 'lu' : 'ld'}', this.value)">
+        <option value="10" ${state.pageSize == 10 ? 'selected' : ''}>10</option>
+        <option value="20" ${state.pageSize == 20 ? 'selected' : ''}>20</option>
+        <option value="50" ${state.pageSize == 50 ? 'selected' : ''}>50</option>
+        <option value="100" ${state.pageSize == 100 ? 'selected' : ''}>100</option>
+      </select> 条
+    </div>`;
+}
+
+function renderPageBtns(current, total, prefix) {
+  let btns = '';
+  const start = Math.max(1, current - 2);
+  const end = Math.min(total, current + 2);
+  for (let i = start; i <= end; i++) {
+    btns += `<button class="${i === current ? 'active' : ''}" onclick="goPage('${prefix}',${i})">${i}</button>`;
+  }
+  return btns;
+}
+
+function goPage(prefix, page) {
+  if (prefix === 'lu') { LU_STATE.page = page; renderLimitUpTable(_luCache, 'lu-up-body', 'lu-up-pagination', 'lu-up-count', LU_STATE, LU_SORT, true); }
+  else { LD_STATE.page = page; renderLimitUpTable(_ldCache, 'lu-down-body', 'lu-down-pagination', 'lu-down-count', LD_STATE, LD_SORT, false); }
+}
+
+function changePageSize(prefix, size) {
+  size = parseInt(size);
+  if (prefix === 'lu') { LU_STATE.pageSize = size; LU_STATE.page = 1; renderLimitUpTable(_luCache, 'lu-up-body', 'lu-up-pagination', 'lu-up-count', LU_STATE, LU_SORT, true); }
+  else { LD_STATE.pageSize = size; LD_STATE.page = 1; renderLimitUpTable(_ldCache, 'lu-down-body', 'lu-down-pagination', 'lu-down-count', LD_STATE, LD_SORT, false); }
+}
+
+function sortLU(prefix, field) {
+  const st = prefix === 'lu' ? LU_SORT : LD_SORT;
+  if (st.field !== field) { st.field = field; st.order = 'asc'; st.clicks = 0; }
+  else if (st.clicks === 0) { st.order = 'desc'; st.clicks = 1; }
+  else { st.field = null; st.clicks = 0; }
+  st.clicks = st.field ? (st.clicks + 1) % 3 : 0;
+  if (prefix === 'lu') renderLimitUpTable(_luCache, 'lu-up-body', 'lu-up-pagination', 'lu-up-count', LU_STATE, LU_SORT, true);
+  else renderLimitUpTable(_ldCache, 'lu-down-body', 'lu-down-pagination', 'lu-down-count', LD_STATE, LD_SORT, false);
+}
+
+// ============================================================
+// 选股追踪
+// ============================================================
+let _pkCache = [];
+const PK_STATE = { page: 1, pageSize: 10 };
+
+async function loadPicksDates() {
+  try {
+    const d = await fetchJSON(api('/api/picks?date=&tag=all'));
+    const dates = d.available_dates || [];
+    const defaultDate = d.default_date || (dates[0] || '');
+    const sel = document.getElementById('pk-date');
+    sel.innerHTML = dates.map(dd => `<option value="${dd}"${dd === defaultDate ? ' selected' : ''}>${dd.slice(0,4)}-${dd.slice(4,6)}-${dd.slice(6)}</option>`).join('');
+    if (dates.length) loadPicks();
+  } catch(e) {
+    document.getElementById('pk-body').innerHTML = `<div class="error-msg">❌ 日期加载失败: ${e.message}</div>`;
+  }
+}
+
+async function loadPicks() {
+  const date = document.getElementById('pk-date').value;
+  const tag = document.getElementById('pk-tag').value;
+  if (!date) return;
+  const el = document.getElementById('pk-body');
+  document.getElementById('pk-pagination').style.display = 'none';
+  el.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
+  try {
+    const d = await fetchJSON(api(`/api/picks?date=${date}&tag=${tag}`));
+    const picks = d.picks || [];
+    if (!picks.length) { el.innerHTML = '<div class="loading">当日无选股数据</div>'; return; }
+    _pkCache = picks;
+    PK_STATE.page = 1;
+    renderPicksTable();
+  } catch(e) {
+    el.innerHTML = `<div class="error-msg">❌ 选股数据加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderPicksTable() {
+  const picks = _pkCache;
+  const el = document.getElementById('pk-body');
+  const total = picks.length;
+  const totalPages = Math.ceil(total / PK_STATE.pageSize);
+  if (PK_STATE.page > totalPages) PK_STATE.page = totalPages || 1;
+  if (PK_STATE.page < 1) PK_STATE.page = 1;
+  const start = (PK_STATE.page - 1) * PK_STATE.pageSize;
+  const pageData = picks.slice(start, start + PK_STATE.pageSize);
+
+  // 维度中文映射
+  function dimLabel(tag) {
+    if (tag === 'limitup' || tag === '涨停接力') return '涨停接力';
+    if (tag === 'range' || tag === '区间潜伏') return '区间潜伏';
+    return tag || '';
+  }
+
+  // T+N 涨跌幅渲染
+  function fmtTrack(changePct) {
+    if (changePct == null) return '<span style="color:#ccc">—</span>';
+    const v = changePct;
+    const cls = v > 0 ? 'up' : 'down';
+    const prefix = v > 0 ? '+' : '';
+    return `<span class="${cls}">${prefix}${v.toFixed(2)}%</span>`;
+  }
+
+  el.innerHTML = `<div class="card">
+    <div class="card-body" style="overflow-x:auto">
+      <table>
+        <tr><th>代码</th><th>名称</th><th>维度</th><th>入选日</th><th>评分</th><th>入选价</th><th>T+1</th><th>T+2</th><th>T+3</th><th>T+4</th><th>T+5</th></tr>
+        ${pageData.map(p => {
+          const tracking = p.tracking || [];
+          return `<tr>
+            <td>${p.code}</td>
+            <td style="font-weight:600">${p.name || ''}</td>
+            <td>${dimLabel(p.data_tag)}</td>
+            <td>${(p.trade_date||'').slice(-5)}</td>
+            <td style="font-weight:600">${p.total_score}</td>
+            <td>${p.entry_price ? p.entry_price.toFixed(2) : '--'}</td>
+            ${[0,1,2,3,4].map(i => `<td>${fmtTrack(tracking[i] ? tracking[i].change_pct : null)}</td>`).join('')}
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>
+  </div>`;
+
+  // 分页控件
+  const pagEl = document.getElementById('pk-pagination');
+  pagEl.style.display = 'flex';
+  pagEl.innerHTML = `<span>共 ${total} 条，第 ${PK_STATE.page}/${totalPages} 页</span>
+    <div class="page-btns">
+      <button ${PK_STATE.page <= 1 ? 'disabled' : ''} onclick="pkGoPage(1)">首页</button>
+      <button ${PK_STATE.page <= 1 ? 'disabled' : ''} onclick="pkGoPage(${PK_STATE.page - 1})">‹</button>
+      ${pkRenderPageBtns(PK_STATE.page, totalPages)}
+      <button ${PK_STATE.page >= totalPages ? 'disabled' : ''} onclick="pkGoPage(${PK_STATE.page + 1})">›</button>
+      <button ${PK_STATE.page >= totalPages ? 'disabled' : ''} onclick="pkGoPage(${totalPages})">末页</button>
+    </div>
+    <div class="page-size">
+      每页 <select onchange="pkChangePageSize(this.value)">
+        <option value="10" ${PK_STATE.pageSize == 10 ? 'selected' : ''}>10</option>
+        <option value="20" ${PK_STATE.pageSize == 20 ? 'selected' : ''}>20</option>
+        <option value="50" ${PK_STATE.pageSize == 50 ? 'selected' : ''}>50</option>
+        <option value="100" ${PK_STATE.pageSize == 100 ? 'selected' : ''}>100</option>
+      </select> 条
+    </div>`;
+}
+
+function pkRenderPageBtns(current, total) {
+  let btns = '';
+  const start = Math.max(1, current - 2);
+  const end = Math.min(total, current + 2);
+  for (let i = start; i <= end; i++) {
+    btns += `<button class="${i === current ? 'active' : ''}" onclick="pkGoPage(${i})">${i}</button>`;
+  }
+  return btns;
+}
+
+function pkGoPage(page) {
+  PK_STATE.page = page;
+  renderPicksTable();
+}
+
+function pkChangePageSize(size) {
+  PK_STATE.pageSize = parseInt(size);
+  PK_STATE.page = 1;
+  renderPicksTable();
+}
+
+// ====== 启动 ======
+// 如果通过 web_server.py 提供，API_BASE 需要同源
+if (location.port === '8899') {
+  // 同源模式，API 直接走相对路径
+}
+switchModule('overview');
+</script>
+</body>
+</html>

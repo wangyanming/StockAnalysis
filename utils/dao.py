@@ -130,7 +130,18 @@ class DB:
         except (pymysql.err.InterfaceError,
                 pymysql.err.OperationalError,
                 pymysql.err.InternalError) as exc:
-            # 连接相关异常：关闭旧连接（触发 PooledDB 丢弃），重试 1 次
+            # 判断是否为连接级错误（不是业务错误如 Duplicate key）
+            err_msg = str(exc).lower()
+            is_conn_error = any(
+                kw in err_msg
+                for kw in ["packet sequence", "connection", "lost", "closed",
+                          "timeout", "gone away", "link", "broken"]
+            )
+            if not is_conn_error:
+                # 业务错误（如 Duplicate key），直接抛出
+                conn.close()
+                raise
+            # 连接异常：关闭旧连接（触发 PooledDB 丢弃），重试 1 次
             logger.warning(f"连接异常，准备重试: {exc}")
             try:
                 conn.close()  # 归还/丢弃旧连接

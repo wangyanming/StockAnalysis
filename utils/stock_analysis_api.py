@@ -693,12 +693,15 @@ class StockDataFetcher:
     def get_market_summary(self, date_str: str = None) -> Dict:
         """
         从 sector_performance 表汇总市场数据（涨跌家数、成交额、前日对比）。
-        保留原有方法签名兼容之前的使用方。
+        保留原有方法签名兼容之前的使用方：
+        - 传了 date_str 则用参数
+        - 不传则走 get_display_date() 统一展示日期规则
         """
         from utils.dao import get_db
+        from utils.date_utils import get_display_date
         db = get_db()
         # 统一为 YYYY-MM-DD 格式
-        raw = date_str or datetime.now().strftime('%Y%m%d')
+        raw = date_str or get_display_date()
         raw = str(raw).replace('-', '')
         today = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
         yesterday_dt = datetime.strptime(today, '%Y-%m-%d') - timedelta(days=1)

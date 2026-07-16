@@ -20,19 +20,22 @@ def _fix_sql(sql: str) -> str:
 
 def _execute(sql: str, params: tuple = ()):
     """执行 SQL 并自动修复占位符"""
-    cur = db.conn.cursor()
-    cur.execute(_fix_sql(sql), params)
+    from utils.dao import get_db as _get_db
+    cur = _get_db().execute(_fix_sql(sql), params)
     return cur
 
 
 def get_connection():
-    """获取数据库连接（后向兼容）"""
-    return db.conn
+    """获取数据库连接（后向兼容）
+    注：连接池模式下返回 None，仅保留签名兼容。
+    """
+    return None
 
 
 def init_db():
     """初始化数据库表（MySQL 已通过 db_schema.sql 建表，此函数仅做兼容）"""
-    cur = db.conn.cursor()
+    from utils.dao import get_db as _get_db
+    cur = _get_db().execute('SELECT 1')
 
     # SQLite建表语句 — MySQL模式会因AUTOINCREMENT/now()语法报错，用try跳过
     for tbl_sql, compat_sql in [
