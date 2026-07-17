@@ -33,13 +33,36 @@ def fetch_all(do_stock_daily: bool = False):
         do_stock_daily: 是否执行个股日K增量更新（15:10太快不跑，17:00/18:30跑）
     """
     from utils.stock_analysis_api import StockDataFetcher
-    from utils.data_store import QuoteStore
     from core.fetcher.limit_up_analysis import LimitUpAnalyzer
     
     t0 = time.time()
     f = StockDataFetcher()
-    store = QuoteStore()
     zt = LimitUpAnalyzer()
+
+    def _save_index_quote(index_code, data):
+        from utils.dao import get_db
+        try:
+            cur = get_db().execute(
+                """REPLACE INTO index_quotes 
+                   (index_code, name, current_price, change_pct, open, high, low, volume, amount, timestamp, record_date)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    index_code,
+                    data.get("name", index_code),
+                    data.get("current_price", 0),
+                    data.get("change_pct", 0),
+                    data.get("open", 0),
+                    data.get("high", 0),
+                    data.get("low", 0),
+                    data.get("volume", 0),
+                    data.get("amount", 0),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.now().strftime("%Y-%m-%d")
+                )
+            )
+            cur.close()
+        except Exception as e:
+            logger.error(f"保存指数行情失败: {e}")
     
     results = {}
     
@@ -49,7 +72,7 @@ def fetch_all(do_stock_daily: bool = False):
         for idx in ['szzs', 'szcz', 'hs300', 'cyb', 'kc50']:
             data = f.fetch_index_data(idx)
             if data:
-                store.save_index_quote(idx, data)
+                _save_index_quote(idx, data)
         results['index'] = 'OK'
     except Exception as e:
         results['index'] = f'ERR: {e}'

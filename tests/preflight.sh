@@ -66,7 +66,7 @@ echo ""
 echo "📦 4/4 模块导入检查..."
 python3 -c "
 import sys; sys.path.insert(0, '.')
-from utils.data_store import QuoteStore
+from utils.dao import get_db
 from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 from core.analyzer.scorer import build_candidate_pool
 from core.fetcher.daily_fetch import fetch_all

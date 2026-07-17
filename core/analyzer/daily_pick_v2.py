@@ -19,7 +19,7 @@ logger = setup_logger("daily_pick_v2")
 os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.getcwd())
 
-from utils.data_store import QuoteStore, get_connection
+from utils.dao import get_db as _get_db
 from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 from core.analyzer.scorer import check_market_status, score_candidate, format_score_report
 
@@ -37,7 +37,6 @@ def pick_stocks_v2():
     from core.analyzer.scorer import fetch_sina_quote
 
     _T_START = time.time()
-    store = QuoteStore()
     zt = LimitUpAnalyzer()
 
     results = {}
@@ -92,7 +91,10 @@ def pick_stocks_v2():
     # 4. 板块表现
     logger.info("4. 板块表现分析...")
     try:
-        sectors = store.get_sector_performances(rank_type='涨幅')
+        sectors = _get_db().fetchall(
+            "SELECT * FROM sector_performance WHERE record_date = %s AND rank_type = %s ORDER BY id",
+            (datetime.now().strftime('%Y-%m-%d'), '涨幅')
+        )
         if sectors:
             top_sectors = sorted(sectors, key=lambda x: x.get('change_pct', 0), reverse=True)[:5]
             results['top_sectors'] = top_sectors

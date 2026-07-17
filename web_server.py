@@ -18,11 +18,10 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils.stock_analysis_api import StockDataFetcher
-from utils.data_store import QuoteStore
+from utils.dao import get_db
 from core.fetcher.limit_up_analysis import LimitUpAnalyzer
 
 f = StockDataFetcher()
-store = QuoteStore()
 zt = LimitUpAnalyzer()
 
 # 简单缓存
@@ -167,7 +166,28 @@ class RequestHandler(BaseHTTPRequestHandler):
         data = f.fetch_index_quote(code)
         kline = f.fetch_index_kline(code, days=30)
         if data:
-            store.save_index_quote(code, data)
+            try:
+                cur = get_db().execute(
+                    """REPLACE INTO index_quotes 
+                       (index_code, name, current_price, change_pct, open, high, low, volume, amount, timestamp, record_date)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        code,
+                        data.get("name", code),
+                        data.get("current_price", 0),
+                        data.get("change_pct", 0),
+                        data.get("open", 0),
+                        data.get("high", 0),
+                        data.get("low", 0),
+                        data.get("volume", 0),
+                        data.get("amount", 0),
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        datetime.now().strftime("%Y-%m-%d")
+                    )
+                )
+                cur.close()
+            except Exception as e:
+                pass
         result = {"quote": data}
         if kline is not None:
             kline_data = []
@@ -188,7 +208,28 @@ class RequestHandler(BaseHTTPRequestHandler):
         secid = params.get("secid", ["1.600519"])[0]
         data = f.fetch_stock_quote(secid)
         if data:
-            store.save_stock_quote(secid, data)
+            try:
+                cur = get_db().execute(
+                    """INSERT INTO stock_quotes 
+                       (stock_code, name, current_price, change_pct, open, high, low, pre_close, volume, amount, timestamp)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        secid,
+                        data.get("name", ""),
+                        data.get("current_price", 0),
+                        data.get("change_pct", 0),
+                        data.get("open", 0),
+                        data.get("high", 0),
+                        data.get("low", 0),
+                        data.get("pre_close", 0),
+                        data.get("volume", 0),
+                        data.get("amount", 0),
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                )
+                cur.close()
+            except Exception as e:
+                pass
         self.send_json({"quote": data or {}})
 
     def api_sectors(self):
@@ -224,10 +265,23 @@ class RequestHandler(BaseHTTPRequestHandler):
         code = params.get("code", ["szzs"])[0]
         days = int(params.get("days", [30])[0])
 
+        db = get_db()
         if kind == "index":
-            data = store.get_index_history(code, days)
+            data = db.fetchall(
+                """SELECT * FROM index_quotes 
+                   WHERE index_code = %s 
+                   ORDER BY timestamp DESC 
+                   LIMIT %s""",
+                (code, days)
+            )
         else:
-            data = store.get_stock_history(code, days)
+            data = db.fetchall(
+                """SELECT * FROM stock_quotes 
+                   WHERE stock_code = %s 
+                   ORDER BY timestamp DESC 
+                   LIMIT %s""",
+                (code, days)
+            )
         self.send_json({"data": data})
 
     def api_limit_up(self):

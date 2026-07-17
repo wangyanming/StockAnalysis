@@ -23,11 +23,6 @@ from utils.logger import setup_logger
 logger = setup_logger("stock_analysis_api")
 
 
-def _get_store():
-    """延迟导入并返回 QuoteStore 实例"""
-    from utils.data_store import QuoteStore
-    return QuoteStore()
-
 
 def _curl_text(url: str, timeout: int = 10, headers: Optional[Dict] = None) -> Optional[str]:
     """通过 subprocess + curl 发起 HTTP 请求"""

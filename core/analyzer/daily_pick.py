@@ -18,11 +18,10 @@ sys.path.insert(0, os.getcwd())
 def pick_stocks():
     """选股主逻辑：业绩增长+技术面+板块热点"""
     from utils.stock_analysis_api import StockDataFetcher
-    from utils.data_store import QuoteStore
+    from utils.dao import get_db as _get_db
     from core.fetcher.limit_up_analysis import LimitUpAnalyzer
     
     f = StockDataFetcher()
-    store = QuoteStore()
     zt = LimitUpAnalyzer()
     
     results = {}
@@ -58,7 +57,10 @@ def pick_stocks():
     # 3. 板块表现
     logger.info("分析板块表现...")
     try:
-        sectors = store.get_sector_performances(rank_type='涨幅')
+        sectors = _get_db().fetchall(
+            "SELECT * FROM sector_performance WHERE record_date = %s AND rank_type = %s ORDER BY id",
+            (datetime.now().strftime('%Y-%m-%d'), '涨幅')
+        )
         if sectors:
             top_sectors = sorted(sectors, key=lambda x: x.get('change_pct', 0), reverse=True)[:5]
             results['top_sectors'] = top_sectors
