@@ -691,7 +691,7 @@ function sortLU(prefix, field) {
 // 选股追踪
 // ============================================================
 let _pkCache = [];
-const PK_STATE = { page: 1, pageSize: 10 };
+const PK_STATE = { page: 1, pageSize: 10, sortField: null, sortAsc: false };
 
 async function loadPicksDates() {
   try {
@@ -719,15 +719,42 @@ async function loadPicks() {
     if (!picks.length) { el.innerHTML = '<div class="loading">当日无选股数据</div>'; return; }
     _pkCache = picks;
     PK_STATE.page = 1;
+    if (PK_STATE.sortField) {
+      _pkCache = _sortPicks(_pkCache);
+    }
     renderPicksTable();
   } catch(e) {
     el.innerHTML = `<div class="error-msg">❌ 选股数据加载失败: ${e.message}</div>`;
   }
 }
 
+function _sortPicks(data) {
+  const f = PK_STATE.sortField;
+  if (!f) return data;
+  const asc = PK_STATE.sortAsc;
+  return [...data].sort((a, b) => {
+    let va = a[f], vb = b[f];
+    if (f === 'trade_date') {
+      va = parseInt(va || '0', 10);
+      vb = parseInt(vb || '0', 10);
+    } else if (f === 'total_score') {
+      va = parseFloat(va) || 0;
+      vb = parseFloat(vb) || 0;
+    } else if (f === 'entry_price') {
+      va = parseFloat(va) || 0;
+      vb = parseFloat(vb) || 0;
+    } else if (f.startsWith('t') && f.length === 2) {
+      const idx = parseInt(f[1], 10) - 1;
+      va = parseFloat(a.tracking?.[idx]?.change_pct) || 0;
+      vb = parseFloat(b.tracking?.[idx]?.change_pct) || 0;
+    }
+    return asc ? va - vb : vb - va;
+  });
+}
+
 function renderPicksTable() {
-  const picks = _pkCache;
   const el = document.getElementById('pk-body');
+  const picks = _pkCache || [];
   const total = picks.length;
   const totalPages = Math.ceil(total / PK_STATE.pageSize);
   if (PK_STATE.page > totalPages) PK_STATE.page = totalPages || 1;
@@ -754,14 +781,22 @@ function renderPicksTable() {
   el.innerHTML = `<div class="card">
     <div class="card-body" style="overflow-x:auto">
       <table>
-        <tr><th>代码</th><th>名称</th><th>维度</th><th>入选日</th><th>评分</th><th>入选价</th><th>T+1</th><th>T+2</th><th>T+3</th><th>T+4</th><th>T+5</th></tr>
+        <tr>${['代码','名称','维度','入选日','评分','入选价','T+1','T+2','T+3','T+4','T+5'].map((label,i) => {
+          const fields = ['code','name','data_tag','trade_date','total_score','entry_price','t1','t2','t3','t4','t5'];
+          const f = fields[i];
+          const isSortable = ['trade_date','total_score','entry_price','t1','t2','t3','t4','t5'].includes(f);
+          const isActive = PK_STATE.sortField === f;
+          const arrow = isActive ? (PK_STATE.sortAsc ? ' ↑' : ' ↓') : '';
+          if (!isSortable) return `<th>${label}</th>`;
+          return `<th onclick="pkSortPicks('${f}')" data-field="${f}" style="cursor:pointer;user-select:none">${label}${arrow}</th>`;
+        }).join('')}</tr>
         ${pageData.map(p => {
           const tracking = p.tracking || [];
           return `<tr>
             <td>${p.code}</td>
             <td style="font-weight:600">${p.name || ''}</td>
             <td>${dimLabel(p.data_tag)}</td>
-            <td>${(p.trade_date||'').slice(-5)}</td>
+            <td>${(p.trade_date||'').slice(0,4)+'-'+(p.trade_date||'').slice(4,6)+'-'+(p.trade_date||'').slice(6,8)}</td>
             <td style="font-weight:600">${p.total_score}</td>
             <td>${p.entry_price ? p.entry_price.toFixed(2) : '--'}</td>
             ${[0,1,2,3,4].map(i => `<td>${fmtTrack(tracking[i] ? tracking[i].change_pct : null)}</td>`).join('')}
@@ -800,6 +835,18 @@ function pkRenderPageBtns(current, total) {
     btns += `<button class="${i === current ? 'active' : ''}" onclick="pkGoPage(${i})">${i}</button>`;
   }
   return btns;
+}
+
+function pkSortPicks(field) {
+  if (PK_STATE.sortField === field) {
+    PK_STATE.sortAsc = !PK_STATE.sortAsc;
+  } else {
+    PK_STATE.sortField = field;
+    PK_STATE.sortAsc = false;
+  }
+  PK_STATE.page = 1;
+  _pkCache = _sortPicks(_pkCache);
+  renderPicksTable();
 }
 
 function pkGoPage(page) {

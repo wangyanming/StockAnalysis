@@ -687,11 +687,20 @@ def _save_picks_to_db(results: dict):
             code = r['code']
             is_top = code in candidate_codes
             bd = r.get('breakdown', {})
+            # 按分组设置 data_tag：涨停回踩 → limitup，区间潜伏 → range，其他留空
+            group = r.get('group', '')
+            if group == '涨停回踩':
+                data_tag = 'limitup'
+            elif group == '区间潜伏':
+                data_tag = 'range'
+            else:
+                data_tag = ''
             db.insert_or_ignore('daily_picks', {
                 'trade_date': today,
                 'code': code,
                 'name': r['name'],
                 'board_times': r.get('board_times', 1),
+                'data_tag': data_tag,
                 'total_score': r['total_score'],
                 'grade': r.get('grade', ''),
                 'position_advice': r.get('position_advice', ''),
@@ -705,6 +714,7 @@ def _save_picks_to_db(results: dict):
                 'score_sector': bd.get('板块环境', {}).get('score', None),
                 'score_trend': bd.get('趋势位置', {}).get('score', None),
                 'score_market': bd.get('大盘安全', {}).get('score', None),
+                'score_pos': bd.get('位置评估', {}).get('score', None),
             })
 
         logger.info(f"选股结果已落库: {len(scored)}只评分, {len(candidates)}只精选")

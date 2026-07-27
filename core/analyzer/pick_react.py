@@ -111,34 +111,36 @@ def update_feedback(check_date: str = None) -> int:
         code = r['code']
         pick_date = r['trade_date']
 
-        day_data = db.fetchone('''
-            SELECT close, open, trade_date
+        # T+1 开盘价
+        t1 = db.fetchone('''
+            SELECT open, trade_date
             FROM stock_daily
-            WHERE code=%s AND trade_date > %s AND trade_date <= %s AND close > 0
+            WHERE code=%s AND trade_date > %s AND trade_date <= %s AND open > 0
             ORDER BY trade_date ASC
             LIMIT 1
         ''', (code, pick_date, check_date))
 
-        if not day_data:
+        if not t1:
             continue
 
-        close_price = day_data['close']
-        open_price = day_data['open']
-
-        pick_data = db.fetchone(
-            'SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s',
-            (code, pick_date))
-
-        if not pick_data or not pick_data['close'] or pick_data['close'] == 0:
+        # T+2 收盘价
+        t2 = db.fetchone('''
+            SELECT close
+            FROM stock_daily
+            WHERE code=%s AND trade_date > %s AND close > 0
+            ORDER BY trade_date ASC
+            LIMIT 1
+        ''', (code, t1['trade_date']))
+        if not t2:
             continue
 
-        change = (close_price - pick_data['close']) / pick_data['close'] * 100
+        change = (t2['close'] - t1['open']) / t1['open'] * 100
 
         db.execute('''
             UPDATE daily_picks
             SET next_day_change=%s, next_open=%s, next_close=%s
             WHERE id=%s
-        ''', (round(change, 2), open_price, close_price, r['id']))
+        ''', (round(change, 2), t1['open'], t2['close'], r['id']))
         updated += 1
 
         if updated % 50 == 0:
@@ -151,17 +153,177 @@ def update_feedback(check_date: str = None) -> int:
     return updated
 
 
+# ─── 回填函数（手动触发，不在自动流程中） ──────────────
+
+def batch_fix_next_day_change(check_date: str = None):
+    """
+    全量回填 daily_picks 的收益率数据（按新公式）。
+    对所有 next_day_change IS NOT NULL 的记录重算。
+
+    注意：DAO 使用 autocommit=True，不需要手动 commit。
+    """
+    db = get_db()
+    if not check_date:
+        check_date = datetime.now().strftime('%Y%m%d')
+
+    # 取 T-2 交易日（排除 T-1: 买入日 和 T: 今日）
+    # 从 stock_daily 查实际交易日，跳过周末
+    t2_row = db.fetchone('''
+        SELECT DISTINCT trade_date FROM stock_daily
+        WHERE trade_date < %s
+        ORDER BY trade_date DESC
+        LIMIT 1 OFFSET 1
+    ''', (check_date,))
+    if not t2_row:
+        return 0
+    cutoff_t2 = t2_row['trade_date']
+
+    # 查所有需要重算的记录
+    rows = db.fetchall('''
+        SELECT id, code, trade_date
+        FROM daily_picks
+        WHERE trade_date >= '20260101'
+          AND next_day_change IS NOT NULL
+          AND trade_date <= %s
+        ORDER BY id
+    ''', (cutoff_t2,))
+
+    if not rows:
+        logger.info('  没有需要回填的记录')
+        return 0
+
+    logger.info(f'  开始回填 {len(rows)} 条 next_day_change ...')
+    updated = 0
+    for r in rows:
+        code = r['code']
+        pick_date = r['trade_date']
+
+        # T+1 开盘价
+        t1 = db.fetchone('''
+            SELECT open, trade_date FROM stock_daily
+            WHERE code=%s AND trade_date > %s AND trade_date <= %s AND open > 0
+            ORDER BY trade_date ASC LIMIT 1
+        ''', (code, pick_date, check_date))
+
+        if not t1:
+            continue
+
+        # T+2 收盘价
+        t2 = db.fetchone('''
+            SELECT close FROM stock_daily
+            WHERE code=%s AND trade_date > %s AND close > 0
+            ORDER BY trade_date ASC LIMIT 1
+        ''', (code, t1['trade_date']))
+        if not t2:
+            continue
+
+        change = (t2['close'] - t1['open']) / t1['open'] * 100
+
+        db.execute('''
+            UPDATE daily_picks
+            SET next_day_change=%s, next_open=%s, next_close=%s
+            WHERE id=%s
+        ''', (round(change, 2), t1['open'], t2['close'], r['id']))
+        updated += 1
+
+        if updated % 500 == 0:
+            logger.info(f'  已回填 {updated}/{len(rows)} 条')
+
+    logger.info(f'  回填完成: {updated}/{len(rows)} 条')
+
+    # 重建 observe_log
+    # 传 T-1（check_date 的前一个交易日），使得 SQL 的 trade_date < %s
+    # 能包含 T-2 及更早数据，同时排除 T-1（买入日）和 T（今日）
+    t1_row = db.fetchone('''
+        SELECT DISTINCT trade_date FROM stock_daily
+        WHERE trade_date < %s
+        ORDER BY trade_date DESC LIMIT 1 OFFSET 0
+    ''', (check_date,))
+    cutoff_t1 = t1_row['trade_date'] if t1_row else cutoff_t2
+    logger.info('  重建 observe_log ...')
+    db.execute('DELETE FROM observe_log WHERE 1=1')
+    _sync_observe_log(db, cutoff_t1)
+    logger.info('  observe_log 重建完成')
+
+    return updated
+
+
+def batch_fix_score_pos():
+    """
+    补写 daily_picks 中 score_pos IS NULL 的记录。
+    逻辑：取20日区间位置百分比，按 scorcer 的 _score_position_in_range 逻辑计算。
+
+    注意：DAO 使用 autocommit=True，不需要手动 commit。
+    """
+    db = get_db()
+
+    rows = db.fetchall('''
+        SELECT id, code, trade_date FROM daily_picks
+        WHERE (score_pos IS NULL OR score_pos = 0)
+          AND trade_date >= '20260101'
+        ORDER BY id
+    ''')
+
+    if not rows:
+        logger.info('  没有需要回填 score_pos 的记录')
+        return 0
+
+    logger.info(f'  开始回填 {len(rows)} 条 score_pos ...')
+    updated = 0
+    for r in rows:
+        code = r['code']
+        trade_date = r['trade_date']
+
+        # 取当前收盘价 + 20日最低/最高
+        row = db.fetchone('''
+            SELECT MIN(low) as min_l, MAX(high) as max_h
+            FROM stock_daily
+            WHERE code=%s
+              AND trade_date <= %s
+              AND trade_date >= DATE_FORMAT(DATE_SUB(STR_TO_DATE(%s,'%%Y%%m%%d'), INTERVAL 20 DAY), '%%Y%%m%%d')
+        ''', (code, trade_date, trade_date))
+
+        if not row or not row['max_h'] or not row['min_l'] or row['max_h'] <= row['min_l']:
+            continue
+
+        current_close = db.fetchone(
+            'SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s',
+            (code, trade_date))
+        if not current_close or not current_close['close']:
+            continue
+
+        pos_pct = (current_close['close'] - row['min_l']) / (row['max_h'] - row['min_l']) * 100
+
+        if pos_pct < 30:
+            pos_score = 15
+        elif pos_pct < 60:
+            pos_score = 8
+        elif pos_pct < 85:
+            pos_score = 3
+        else:
+            pos_score = 0
+
+        db.execute('UPDATE daily_picks SET score_pos=%s WHERE id=%s', (pos_score, r['id']))
+        updated += 1
+
+        if updated % 500 == 0:
+            logger.info(f'  已回填 {updated}/{len(rows)} 条')
+
+    logger.info(f'  位置评分回填完成: {updated}/{len(rows)} 条')
+    return updated
+
+
 def _sync_observe_log(db, check_date: str):
-    """把 daily_picks 有 next_day_change 且 is_pick=1 的记录同步到 observe_log"""
+    """把 daily_picks 中 total_score >= 60 且有 next_day_change 的记录同步到 observe_log"""
     rows = db.fetchall('''
         SELECT trade_date, code, name, total_score, `rank`, is_pick, source, grade,
                next_day_change, score_chip, score_money, score_sector, score_trend, score_market,
-               position_advice
+               score_pos, position_advice
         FROM daily_picks
-        WHERE is_pick = 1 AND next_day_change IS NOT NULL
+        WHERE total_score >= 60 AND next_day_change IS NOT NULL
           AND trade_date < %s
-          AND (trade_date, code, is_pick) NOT IN (
-              SELECT trade_date, code, is_pick FROM observe_log
+          AND (trade_date, code) NOT IN (
+              SELECT trade_date, code FROM observe_log
           )
     ''', (check_date,))
 
@@ -173,14 +335,16 @@ def _sync_observe_log(db, check_date: str):
         db.execute('''
             INSERT IGNORE INTO observe_log
                 (trade_date, code, name, total_score, `rank`, is_pick, source, grade,
-                 next_day_change, score_chip, score_money, score_sector, score_trend, score_market, position_advice)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 next_day_change, score_chip, score_money, score_sector, score_trend, score_market,
+                 score_pos, position_advice)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             r['trade_date'], r['code'], r['name'], r['total_score'],
             r['rank'], r['is_pick'], r['source'], r['grade'],
             r['next_day_change'],
             r['score_chip'], r['score_money'], r['score_sector'],
-            r['score_trend'], r['score_market'], r['position_advice']
+            r['score_trend'], r['score_market'],
+            r['score_pos'], r['position_advice']
         ))
         synced += 1
 
@@ -310,13 +474,248 @@ def _dim_accuracy_analysis(db, check_date: str, window_days: int = 30) -> list:
 
 
 def _last_5_dates(db, check_date: str) -> list:
-    """最近5个有 is_pick=1 且 next_day_change 已填充的交易日期"""
+    """最近5个有 total_score>=60 且 next_day_change 已填充的交易日期"""
     rows = db.fetchall('''
         SELECT DISTINCT trade_date FROM daily_picks
-        WHERE trade_date < %s AND is_pick = 1 AND next_day_change IS NOT NULL
+        WHERE trade_date < %s AND total_score >= 60 AND next_day_change IS NOT NULL
         ORDER BY trade_date DESC LIMIT 5
     ''', (check_date,))
     return [r['trade_date'] for r in rows]
+
+
+# ─── 20日滚动复盘统计（新） ────────────────────────────
+
+# 维度区间分段配置
+DIM_SEGMENTS = [
+    ('score_chip', '筹码结构', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (0, 4, '低分(<5)')]),
+    ('score_money', '资金接力', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (0, 4, '低分(<5)')]),
+    ('score_sector', '板块环境', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (0, 3, '低分(<4)')]),
+    ('score_trend', '趋势位置', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (0, 3, '低分(<4)')]),
+    ('score_market', '大盘安全', 10, [(6, 10, '高分(≥6)'), (2, 5, '中分(2~5)'), (0, 1, '低分(<2)')]),
+]
+
+
+def _get_active_pick_dates(db, check_date: str, max_days: int = 20) -> list:
+    """获取有完整 observe_log 数据的交易日列表（最多 max_days 天）"""
+    # 取 T-2 交易日（排除 T-1: 买入日 和 T: 今日）
+    # 从 stock_daily 查实际交易日，跳过周末
+    t2_row = db.fetchone('''
+        SELECT DISTINCT trade_date FROM stock_daily
+        WHERE trade_date < %s
+        ORDER BY trade_date DESC
+        LIMIT 1 OFFSET 1
+    ''', (check_date,))
+    if not t2_row:
+        return []
+    cutoff_t2 = t2_row['trade_date']
+    rows = db.fetchall('''
+        SELECT DISTINCT trade_date FROM observe_log
+        WHERE next_day_change IS NOT NULL
+          AND trade_date <= %s
+        ORDER BY trade_date DESC LIMIT %s
+    ''', (cutoff_t2, max_days))
+    return sorted([r['trade_date'] for r in rows])
+
+
+def _build_react_summary(rows: list) -> dict:
+    """构建概览统计"""
+    total = len(rows)
+    if total == 0:
+        return {'total': 0, 'wins': 0, 'win_rate': 0, 'avg_return': 0}
+    wins = sum(1 for r in rows if r['next_day_change'] and r['next_day_change'] > 0)
+    avg_ret = sum(r['next_day_change'] or 0 for r in rows) / total
+    return {
+        'total': total,
+        'wins': wins,
+        'win_rate': round(wins / total * 100, 1),
+        'avg_return': round(avg_ret, 2),
+    }
+
+
+def _build_dimension_analysis(rows: list) -> list:
+    """对每个维度做区间分段统计"""
+    results = []
+    for db_field, dim_label, full_score, segments in DIM_SEGMENTS:
+        seg_data = []
+        for lo, hi, label in segments:
+            matched = [r for r in rows if r.get(db_field) is not None and lo <= r[db_field] <= hi]
+            cnt = len(matched)
+            if cnt == 0:
+                seg_data.append({'label': label, 'count': 0, 'win_rate': 0, 'avg_return': 0})
+                continue
+            wins = sum(1 for r in matched if r['next_day_change'] and r['next_day_change'] > 0)
+            avg_ret = sum(r['next_day_change'] or 0 for r in matched) / cnt
+            seg_data.append({
+                'label': label,
+                'count': cnt,
+                'win_rate': round(wins / cnt * 100, 1),
+                'avg_return': round(avg_ret, 2),
+            })
+
+        # 预测力判断
+        high = seg_data[0] if seg_data else None
+        low = seg_data[2] if len(seg_data) > 2 else None
+
+        if high and low and high['count'] >= 3 and low['count'] >= 3:
+            diff = high['win_rate'] - low['win_rate']
+            if diff > 20:
+                predictive_power = '强'
+                action = '维持'
+            elif diff > 10:
+                predictive_power = '中'
+                action = '维持'
+            else:
+                predictive_power = '弱'
+                action = '降低' if high['win_rate'] < 50 else '维持'
+        elif high and high['count'] >= 3:
+            predictive_power = '中' if high['win_rate'] >= 55 else '弱'
+            action = '维持'
+        else:
+            predictive_power = '弱'
+            action = '维持'
+
+        # 高分标记
+        if high and high['count'] >= 3 and high['win_rate'] >= 60:
+            action = '维持'
+
+        results.append({
+            'dim_label': dim_label,
+            'full_score': full_score,
+            'high': seg_data[0] if len(seg_data) > 0 else None,
+            'mid': seg_data[1] if len(seg_data) > 1 else None,
+            'low': seg_data[2] if len(seg_data) > 2 else None,
+            'predictive_power': predictive_power,
+            'action': action,
+        })
+
+    return results
+
+
+def _build_group_stats(rows: list) -> list:
+    """B/C/D 分组统计"""
+    groups = {'B': [], 'C': [], 'D': []}
+    for r in rows:
+        s = r['total_score'] or 0
+        if 60 <= s < 65:
+            groups['B'].append(r)
+        elif 65 <= s < 70:
+            groups['C'].append(r)
+        elif s >= 70:
+            groups['D'].append(r)
+
+    label_map = {
+        'B': 'B组(60~64)',
+        'C': 'C组(65~69)',
+        'D': 'D组(≥70)',
+    }
+    result = []
+    for key in ['B', 'C', 'D']:
+        items = groups[key]
+        if not items:
+            continue
+        cnt = len(items)
+        wins = sum(1 for r in items if r['next_day_change'] and r['next_day_change'] > 0)
+        avg_ret = sum(r['next_day_change'] or 0 for r in items) / cnt
+        result.append({
+            'label': label_map[key],
+            'count': cnt,
+            'wins': wins,
+            'win_rate': round(wins / cnt * 100, 1),
+            'avg_return': round(avg_ret, 2),
+        })
+    return result
+
+
+def build_react_report(check_date: str = None) -> dict:
+    """
+    构建20日滚动复盘统计报告（结构化 dict）。
+
+    从 observe_log 取最近至多20个有效选股日的全量数据（total_score >= 60），
+    统计概览、维度归因、B/C/D 分组。
+
+    返回: {
+        'window_info': {...},
+        'summary': {...},
+        'dimension_analysis': [...],
+        'group_stats': [...],
+        'react_analysis': {'has_changes': False, 'changes': [], 'analysis_summary': '...'}
+    }
+    """
+    db = get_db()
+    if not check_date:
+        check_date = datetime.now().strftime('%Y%m%d')
+
+    # 获取至多20个有效选股日
+    active_dates = _get_active_pick_dates(db, check_date, 20)
+
+    if not active_dates:
+        logger.warning('  build_react_report: 无有效选股日数据')
+        return {
+            'window_info': {
+                'window_size': 0,
+                'start_date': None,
+                'end_date': None,
+                'note': '无数据'
+            },
+            'summary': {'total': 0, 'wins': 0, 'win_rate': 0, 'avg_return': 0},
+            'dimension_analysis': [],
+            'group_stats': [],
+            'react_analysis': {
+                'has_changes': False,
+                'changes': [],
+                'analysis_summary': '数据不足,暂无法进行自优化分析'
+            },
+        }
+
+    window_size = len(active_dates)
+    start_date = active_dates[0]
+    end_date = active_dates[-1]
+
+    # 查询 observe_log 全量数据
+    placeholders = ','.join(['%s'] * len(active_dates))
+    rows = db.fetchall(f'''
+        SELECT trade_date, code, name, total_score, grade, next_day_change,
+               score_chip, score_money, score_sector, score_trend, score_market, score_pos
+        FROM observe_log
+        WHERE trade_date IN ({placeholders})
+          AND total_score >= 60
+          AND next_day_change IS NOT NULL
+        ORDER BY trade_date DESC, total_score DESC
+    ''', active_dates)
+
+    note = None
+    if window_size < 20:
+        note = f'仅{window_size}天数据'
+
+    window_info = {
+        'window_size': window_size,
+        'start_date': start_date,
+        'end_date': end_date,
+        'note': note,
+    }
+
+    summary = _build_react_summary(rows)
+    dimension_analysis = _build_dimension_analysis(rows)
+    group_stats = _build_group_stats(rows)
+
+    # react_analysis: 复用现有 generate_act_suggestions 的结论
+    dim_analysis_legacy = _dim_accuracy_analysis(db, check_date, window_days=20)
+    suggestions = generate_act_suggestions(dim_analysis_legacy)
+
+    react_analysis = {
+        'has_changes': suggestions['has_changes'],
+        'changes': suggestions['changes'],
+        'analysis_summary': '当前权重配置合理,无需调整' if not suggestions['has_changes']
+        else '检测到需要调整的维度',
+    }
+
+    return {
+        'window_info': window_info,
+        'summary': summary,
+        'dimension_analysis': dimension_analysis,
+        'group_stats': group_stats,
+        'react_analysis': react_analysis,
+    }
 
 
 # ─── Step 3: Act ──────────────────────────────────────

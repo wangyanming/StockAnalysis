@@ -217,56 +217,73 @@ def render_report(data: dict) -> str:
     parts.append("")
     
     # ════════════════════════════════════════
-    # 4️⃣ 昨日选股涨跌及复盘
+    # 4️⃣ T-2日选股涨跌及复盘
     # ════════════════════════════════════════
     parts.append("─" * 50)
-    parts.append("4️⃣ 昨日选股涨跌及复盘")
+    parts.append("4️⃣ T-2日选股涨跌及复盘")
     parts.append("━" * 30)
     
     yp = d.get('yesterday_picks', [])
     if yp:
-        for s in yp:
-            chg = s.get('change_pct', 0)
-            zt_tag = "（涨停）" if s.get('is_zt') else ("（近涨停）" if s.get('is_near_zt') else "")
-            sym = "✅" if s.get('result') == 'win' else "❌"
-            reason = s.get('reason', '')
-            if reason:
-                parts.append(f"{s['name']} {chg:+.2f}%{zt_tag} {sym}，{reason}")
-            else:
-                parts.append(f"{s['name']} {chg:+.2f}%{zt_tag} {sym}")
-        
-        # 汇总
-        up = sum(1 for s in yp if s.get('result') == 'win')
-        down = len(yp) - up
-        total = len(yp)
-        win_rate = up / total * 100 if total > 0 else 0
-        parts.append("─" * 30)
-        parts.append(f"📊 汇总：上涨{up}只 / 下跌{down}只 胜率{win_rate:.0f}%")
-        parts.append("─" * 30)
-    
-    # ReAct复盘（兼容两种模式：字符串=新三闭环，dict=旧简版）
-    rr = d.get('react_report', '')
-    if isinstance(rr, str) and rr:
-        # 新模式：pick_react.run_react_analysis() 返回的文本段落
-        parts.append(rr)
-    elif isinstance(rr, dict) and rr:
-        # 旧模式 fallback：_build_react_data() 返回的 dict
-        parts.append(f"📊 ReAct复盘 (选股{rr.get('pick_date', '')} → 检验{rr.get('check_date', '')})")
-        parts.append(f"精选{rr.get('total_count', 0)}只 · 胜率{rr.get('win_rate', 0):.0f}% · 均涨幅+{rr.get('avg_return', 0):.2f}%")
-        parts.append(f"最大盈利+{rr.get('max_gain', 0):.2f}% · 最大亏损{rr.get('max_loss', 0):.2f}%")
-        parts.append(f"大涨(≥2%): {rr.get('big_gain_count', 0)}只")
-        parts.append("─" * 20)
-        
-        for label, cnt, wr, avg_ret, icon in rr.get('score_groups', []):
-            parts.append(f"{label}: {cnt}只 胜率{wr:.0f}% 均{avg_ret:+.2f}% {icon}")
-        
-        for label, cnt, wr, avg_ret, icon in rr.get('group_groups', []):
-            parts.append(f"{label}: {cnt}只 胜率{wr:.0f}% 均涨幅{avg_ret:+.2f}% {icon}")
-        
-        pw = rr.get('past_week', {})
-        if pw:
+        # 总体统计（仅 ≥60分）
+        qualified = [p for p in yp if p.get('total_score', 0) >= 60]
+        total = len(qualified)
+        if total > 0:
+            wins = sum(1 for p in qualified if p['change_pct'] > 0)
+            losses = total - wins
+            win_rate = round(wins / total * 100, 1)
+            max_gain = max((p['change_pct'] for p in qualified), default=0)
+            max_loss = min((p['change_pct'] for p in qualified), default=0)
+            parts.append("📌 总体统计（≥60分）")
             parts.append("─" * 20)
-            parts.append(f"近一周: {pw.get('count', 0)}只 胜率{pw.get('win_rate', 0):.0f}% 均{pw.get('avg_return', 0):+.2f}%")
+            parts.append(f"总数: {total} 只")
+            parts.append(f"盈利: {wins} 只")
+            parts.append(f"亏损: {losses} 只")
+            parts.append(f"胜率: {win_rate}%")
+            parts.append(f"最大盈利: {max_gain:+.2f}% ｜ 最大亏损: {max_loss:+.2f}%")
+            parts.append("")
+        
+        # 分组统计（B/C/D三组）
+        groups = {
+            'B组（60 ≤ total_score < 65）': [],
+            'C组（65 ≤ total_score < 70）': [],
+            'D组（total_score ≥ 70）': [],
+        }
+        for p in yp:
+            sc = p.get('total_score', 0)
+            if 60 <= sc < 65:
+                groups['B组（60 ≤ total_score < 65）'].append(p)
+            elif 65 <= sc < 70:
+                groups['C组（65 ≤ total_score < 70）'].append(p)
+            elif sc >= 70:
+                groups['D组（total_score ≥ 70）'].append(p)
+        
+        parts.append("📊 分组统计")
+        parts.append("─" * 20)
+        for label, members in groups.items():
+            parts.append(f"┌─ {label}")
+            if members:
+                cnt = len(members)
+                grp_wins = sum(1 for p in members if p['change_pct'] > 0)
+                grp_wr = round(grp_wins / cnt * 100, 1) if cnt > 0 else 0
+                grp_avg = sum(p['change_pct'] for p in members) / cnt
+                parts.append(f"│ 个股数量: {cnt} 只")
+                parts.append(f"│ 盈利: {grp_wins} 只")
+                parts.append(f"│ 胜率: {grp_wr}%")
+                parts.append(f"│ 平均收益率: {grp_avg:+.2f}%")
+            else:
+                parts.append(f"│ 该分组今日无数据")
+            parts.append("└─" + "─" * 28)
+        parts.append("")
+    
+    # ReAct复盘（新：20日滚动统计 + 评分归因）
+    rr = d.get('react_report', '')
+    if isinstance(rr, dict) and rr.get('window_info'):
+        # 新模式：build_react_report() 返回的结构化 dict
+        parts.append(render_react_section(rr))
+    elif isinstance(rr, str) and rr:
+        # 回退：旧版文本段落
+        parts.append(rr)
     
     parts.append("")
     
@@ -284,30 +301,34 @@ def render_report(data: dict) -> str:
         ms = pk.get('max_score', 0)
         ms_val = int(ms) if isinstance(ms, float) and ms == int(ms) else ms
         parts.append(f"最高分: {pk.get('max_name', '')}({ms_val}分)")
-        parts.append(f"📊 {title_date} 收盘选股")
         parts.append(f"📝 评分说明: 筹码结构(25分)+资金接力(25分)+板块环境(20分)+趋势位置(20分)+大盘安全(10分)+位置评分(+15分)")
-        parts.append(f"✅ 大盘: {pk.get('market_status', '')} ({pk.get('market_change', 0):+.2f}%)")
-        parts.append(f"⚡ 涨停: {pk.get('limit_up_total', 0)}只")
-        if pk.get('hot_industries'):
-            hot_inds = pk['hot_industries']
-            if hot_inds and isinstance(hot_inds[0], (list, tuple)):
-                hot_strs = [f"{name}({cnt})" for name, cnt in hot_inds[:4]]
-            else:
-                hot_strs = [str(x) for x in hot_inds[:4]]
-            parts.append(f"热点板块: {' | '.join(hot_strs)}")
-        parts.append("=" * 38)
-        parts.append("")
         
-        # 涨停接力TOP5
-        up_top5 = pk.get('up_top5', [])
-        if up_top5:
-            parts.append(f"⚡ 涨停接力 — TOP {len(up_top5)}")
+        # B/C/D 三组展示
+        group_labels = {
+            'B': 'B组（60 ≤ total_score < 65）',
+            'C': 'C组（65 ≤ total_score < 70）',
+            'D': 'D组（total_score ≥ 70）',
+        }
+        score_groups = pk.get('score_groups', {})
+        
+        for g_key in ['B', 'C', 'D']:
+            label = group_labels[g_key]
+            members = score_groups.get(g_key, [])
+            
             parts.append("")
-            for i, s in enumerate(up_top5, 1):
-                emoji = ['①', '②', '③', '④', '⑤'][i-1]
+            parts.append("━" * 38)
+            parts.append(label)
+            parts.append("━" * 38)
+            
+            if not members:
+                parts.append("该分组今日无候选股")
+                continue
+            
+            for i, s in enumerate(members, 1):
+                emoji = ['①', '②', '③'][i-1]
                 score_val = int(s['score']) if isinstance(s['score'], float) and s['score'] == int(s['score']) else s['score']
-                parts.append(f"{emoji} {s['name']}({s['code']}) — {score_val}分")
-                parts.append(f"📊 来源: {s.get('source', '')}")
+                parts.append(f"{emoji} {s['name']}({s['code']}) — {score_val}分 | {s.get('source', '')}")
+                
                 dims = s.get('dims', {})
                 dim_str = ' | '.join(f"{k}{dims.get(k, 0)}/{max_s}"
                                       for k, max_s in [('筹码', 25), ('接力', 25), ('板块', 20), ('趋势', 20), ('大盘', 10)]
@@ -325,59 +346,14 @@ def render_report(data: dict) -> str:
                 risks = s.get('risks', [])
                 if risks:
                     parts.append(f"⚠️ {' '.join(risks)}")
-                parts.append("")
+                
+                if i < len(members):
+                    parts.append("")
         
-        # 区间潜伏TOP5
-        non_up_top5 = pk.get('non_up_top5', [])
-        if non_up_top5:
-            parts.append("─" * 38)
-            parts.append("")
-            parts.append(f"📗 区间潜伏 — TOP {len(non_up_top5)}")
-            parts.append("")
-            for i, s in enumerate(non_up_top5, 1):
-                emoji = ['①', '②', '③', '④', '⑤'][i-1]
-                score_val = int(s['score']) if isinstance(s['score'], float) and s['score'] == int(s['score']) else s['score']
-                parts.append(f"{emoji} {s['name']}({s['code']}) — {score_val}分")
-                parts.append(f"📊 来源: {s.get('source', '')}")
-                dims = s.get('dims', {})
-                dim_str = ' | '.join(f"{k}{dims.get(k, 0)}/{max_s}"
-                                      for k, max_s in [('筹码', 25), ('接力', 7), ('板块', 5), ('趋势', 14), ('大盘', 10)]
-                                      if k in dims)
-                if '位置' in dims:
-                    dim_str += f" | 位置{dims['位置']}/15"
-                parts.append(f"📋 {dim_str}")
-        else:
-            parts.append("─" * 38)
-            parts.append("")
-            parts.append("📗 区间潜伏 — 暂无符合条件的个股")
-            parts.append("")
-            parts.append("今日未选出满足底部低位+趋势初成+量能放大条件的标的")
-            parts.append("")
-            parts.append("")
-        
+        parts.append("")
         parts.append("=" * 38)
         parts.append("")
         parts.append("📋 明日操作计划")
-        parts.append("")
-        
-        mkt_chg = pk.get('market_change', 0)
-        if mkt_chg < -1.5:
-            parts.append("⚠️ 大盘跌超1.5%，建议观望为主")
-        elif mkt_chg < -0.5:
-            parts.append("⚠️ 大盘偏弱，控制仓位≤30%，优选区间潜伏组")
-        else:
-            parts.append(f"✅ 大盘环境正常，可正常操作")
-        parts.append("")
-        
-        emojis = ['❶', '❷', '❸']
-        parts.append("🌟 重点盯盘 TOP 3：")
-        for i, s in enumerate(pk.get('top3_advice', [])):
-            if i >= 3:
-                break
-            sv = s['score']
-            sv = int(sv) if isinstance(sv, float) and sv == int(sv) else sv
-            parts.append(f"{emojis[i]} {s['name']}({s['code']}) {sv}分 | {s.get('source', '')} | {s.get('position', '')}/{s.get('trend', '')}")
-            parts.append(f"→ {s.get('advice', '')}")
         parts.append("")
         
         parts.append("⚠️ 交易纪律")
@@ -409,3 +385,137 @@ def render_report(data: dict) -> str:
             parts.append(f"总投入: {total_inv:.0f}元 | 持仓: {len(positions)}只")
     
     return "\n".join(parts)
+
+
+def render_react_section(data: dict) -> str:
+    """
+    渲染 ReAct 复盘报告（20日滚动统计 + 评分归因）。
+
+    data 结构由 build_react_report() 返回：
+    {
+        'window_info': {'window_size': 20, 'start_date': '...', 'end_date': '...', 'note': None},
+        'summary': {'total': 120, 'wins': 68, 'win_rate': 56.7, 'avg_return': 1.23},
+        'dimension_analysis': [{...}, ...],
+        'group_stats': [{...}, ...],
+        'react_analysis': {'has_changes': False, 'changes': [], 'analysis_summary': '...'},
+    }
+    """
+    lines = []
+    wi = data.get('window_info', {})
+    summary = data.get('summary', {})
+    dims = data.get('dimension_analysis', [])
+    groups = data.get('group_stats', [])
+    ra = data.get('react_analysis', {})
+
+    window_size = wi.get('window_size', 0)
+    if window_size == 0:
+        return '📊 ReAct复盘：暂无有效数据'
+
+    start_date = wi.get('start_date', '')
+    end_date = wi.get('end_date', '')
+    note = wi.get('note')
+
+    if start_date and end_date:
+        start_fmt = f'{start_date[:4]}/{start_date[4:6]}/{start_date[6:8]}'
+        end_fmt = f'{end_date[:4]}/{end_date[4:6]}/{end_date[6:8]}'
+        date_str = f'当前窗口：{start_fmt}~{end_fmt}'
+        if note:
+            date_str += f'（{note}）'
+    else:
+        date_str = ''
+
+    lines.append('─' * 30)
+    lines.append('📊 ReAct复盘：近20日滚动统计')
+    if date_str:
+        lines.append(date_str)
+
+    # 概览
+    total = summary.get('total', 0)
+    wins = summary.get('wins', 0)
+    win_rate = summary.get('win_rate', 0)
+    avg_ret = summary.get('avg_return', 0)
+
+    if total > 0:
+        lines.append(f'共计{total}只 · 盈利{wins}只 · 胜率{win_rate:.1f}% · 均收益率{avg_ret:+.2f}%')
+    else:
+        lines.append('（无满足条件的样本数据）')
+
+    lines.append('')
+
+    # 评分归因分析
+    if dims:
+        lines.append('📈 评分归因分析：')
+        for d in dims:
+            dim_label = d.get('dim_label', '')
+            full_score = d.get('full_score', 0)
+            pp = d.get('predictive_power', '中')
+            action = d.get('action', '维持')
+
+            # 预测力符号
+            if pp == '强':
+                pp_sym = '🟢'
+            elif pp == '中':
+                pp_sym = '🟡'
+            else:
+                pp_sym = '🔴'
+
+            lines.append(f'  {pp_sym} {dim_label}({full_score}分)')
+
+            segs = [d.get(k) for k in ['high', 'mid', 'low']]
+            for seg in segs:
+                if not seg:
+                    continue
+                cnt = seg.get('count', 0)
+                wr = seg.get('win_rate', 0)
+                avg_r = seg.get('avg_return', 0)
+                label = seg.get('label', '')
+
+                if cnt == 0:
+                    lines.append(f'     {label}: 无样本')
+                    continue
+
+                # 胜率标记
+                marker = ''
+                if cnt >= 3:
+                    if wr >= 60:
+                        marker = ' ✅'
+                    elif wr < 40:
+                        marker = ' ❌'
+
+                # 样本不足标记
+                sample_note = ''
+                if cnt < 3:
+                    marker = '（样本不足）'
+
+                lines.append(f'     {label}: {cnt}只 胜率{wr:.1f}% 均{avg_r:+.2f}%{marker}')
+
+            # 预测力 + 行动
+            if pp and action:
+                pred_map = {'强': '强', '中': '中', '弱': '弱'}
+                pred_label = pred_map.get(pp, pp)
+                lines.append(f'     预测力: {pred_label} | {action}')
+
+        lines.append('  （位置评估暂不纳入）')
+        lines.append('')
+
+    # 分组统计
+    if groups:
+        lines.append('📋 分组统计：')
+        for g in groups:
+            label = g.get('label', '')
+            cnt = g.get('count', 0)
+            wr = g.get('win_rate', 0)
+            avg_r = g.get('avg_return', 0)
+            lines.append(f'  {label}: {cnt}只 胜率{wr:.1f}% 均{avg_r:+.2f}%')
+        lines.append('')
+
+    # 自优化建议
+    lines.append('⚙️ 自优化建议：')
+    if ra.get('has_changes'):
+        for ch in ra.get('changes', []):
+            lines.append(f'  {ch}')
+    else:
+        lines.append(f'  {ra.get("analysis_summary", "当前权重配置合理，无需调整")}')
+
+    lines.append('')
+    return '\n'.join(lines)

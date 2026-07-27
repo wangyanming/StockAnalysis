@@ -60,7 +60,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
 
         if path == "/" or path == "/index.html":
-            self.serve_html()
+            self.redirect("/web_app.html")
         elif path == "/api/market-overview":
             self.api_market_overview()
         elif path == "/api/market-summary":
@@ -95,21 +95,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_json({"error": "not found"}, 404)
 
-    def serve_html(self):
-        """提供 HTML 页面"""
-        html = self._build_html()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(html.encode("utf-8"))
-
     def send_json(self, data: dict, status: int = 200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False, default=str).encode("utf-8"))
+
+    def redirect(self, location: str):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.end_headers()
 
     def api_market_overview(self):
         """API: 市场概况 — 从 index_quotes 表按 get_display_date() 取 5 个指数"""
@@ -332,7 +328,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         # 1. 获取所有可用日期
         dates_rows = db.fetchall("SELECT DISTINCT trade_date FROM daily_picks ORDER BY trade_date DESC")
-        available_dates = [r["trade_date"] for r in dates_rows]
+        available_dates = [str(r["trade_date"]) for r in dates_rows]
 
         # 2. 默认日期逻辑：17:00前默认展示最新日期（昨天选股），17:00后默认展示今天（T日选股）
         #    如果今天已有选股数据则默认选中今天，否则选中最新日期
@@ -429,7 +425,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "name": row["name"],
                 "total_score": row.get("total_score", 0) or 0,
                 "data_tag": display_tag,
-                "trade_date": row.get("trade_date", ""),
+                "trade_date": str(row.get("trade_date", "")),
                 "entry_price": entry_price,
                 "dimensions": dimensions,
                 "tracking": tracking
@@ -481,260 +477,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         """自定义日志"""
         logger = f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]} {args[1]} {args[2]}"
         print(f"  {logger}")
-
-    def _build_html(self) -> str:
-        """构建完整仪表盘 HTML"""
-        return f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>股票分析系统</title>
-<style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font: 15px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; }}
-.header {{ background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: #fff; padding: 24px 20px; text-align: center; position: relative; }}
-.header h1 {{ font-size: 24px; letter-spacing: 2px; }}
-.header p {{ opacity: .7; margin-top: 6px; font-size: 13px; }}
-.header .refresh {{ position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.15); border: none; color: #fff; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-size: 13px; }}
-.header .refresh:hover {{ background: rgba(255,255,255,.25); }}
-.header .refresh:disabled {{ opacity: .5; cursor: not-allowed; }}
-.container {{ max-width: 1100px; margin: 0 auto; padding: 20px; }}
-.card {{ background: #fff; border-radius: 10px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }}
-.card-title {{ font-size: 15px; font-weight: 600; padding: 14px 18px; border-bottom: 1px solid #f0f2f5; color: #333; }}
-.card-body {{ padding: 0; }}
-table {{ width: 100%; border-collapse: collapse; }}
-th {{ background: #f8f9fa; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 13px; color: #555; }}
-td {{ padding: 10px 14px; border-bottom: 1px solid #f5f5f5; font-size: 14px; }}
-tr:hover td {{ background: #fafbfc; }}
-.up {{ color: #ef4444; }}
-.down {{ color: #22c55e; }}
-.tag {{ display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }}
-.tag-up {{ background: #fef2f2; color: #ef4444; }}
-.tag-down {{ background: #f0fdf4; color: #22c55e; }}
-.change-cell {{ display: flex; align-items: center; gap: 6px; }}
-.loading {{ text-align: center; padding: 40px; color: #999; }}
-.error {{ text-align: center; padding: 20px; color: #ef4444; }}
-.last-update {{ text-align: right; padding: 6px 18px 14px; color: #999; font-size: 12px; }}
-.refreshing {{ opacity: .6; pointer-events: none; }}
-.grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
-@media (max-width: 700px) {{ .grid-2 {{ grid-template-columns: 1fr; }} }}
-</style>
-</head>
-<body>
-<div class="header">
-    <h1>📊 股票分析系统</h1>
-    <p id="updateTime">加载中...</p>
-    <button class="refresh" id="refreshBtn" onclick="refresh()">🔄 刷新</button>
-</div>
-<div class="container">
-    <div id="content"><div class="loading">⏳ 加载市场数据...</div></div>
-</div>
-
-<script>
-async function refresh() {{
-    const btn = document.getElementById('refreshBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ 刷新中...';
-    document.getElementById('content').innerHTML = '<div class="loading">⏳ 刷新中...</div>';
-    await loadData();
-    btn.disabled = false;
-    btn.textContent = '🔄 刷新';
-}}
-
-const up = d => d >= 0 ? 'up' : 'down';
-const fmtPct = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
-const icon = v => v >= 0 ? '🔴' : '🟢';
-const boardLabel = b => b >= 3 ? '🔥' : b == 2 ? '⭐' : '';
-
-async function loadData() {{
-    try {{
-        const mktRes = await fetch('/api/market-overview');
-        const mkt = await mktRes.json();
-
-        let html = '';
-
-        // Tab navigation
-        html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
-        html += '<button class="tab-btn active" onclick="showTab(&#39;mkt&#39;)" style="flex:1;padding:10px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;background:#667eea;color:#fff;">📈 行情</button>';
-        html += '<button class="tab-btn" onclick="showTab(&#39;zt&#39;)" style="flex:1;padding:10px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;background:#f0f2f5;color:#333;">🚀 涨停板</button>';
-        html += '</div>';
-        html += '<div id="tab-mkt">';
-
-        // 指数
-        html += '<div class="card"><div class="card-title">📈 主要指数</div><div class="card-body"><table><tr><th>指数</th><th>最新价</th><th>涨跌幅</th></tr>';
-        for (const key of ['szzs','szcz','hs300','cyb','kc50']) {{
-            const d = mkt.indexes[key];
-            if (!d) continue;
-            html += `<tr><td>${{icon(d.change_pct)}} ${{d.name}}</td><td>${{d.current_price.toFixed(2)}}</td><td class="${{up(d.change_pct)}} change-cell"><span class="tag tag-${{up(d.change_pct)}}">${{fmtPct(d.change_pct)}}</span></td></tr>`;
-        }}
-        html += '</table></div></div>';
-
-        // 市场总结
-        const msRes = await fetch('/api/market-summary');
-        const ms = await msRes.json();
-
-        html += '<div class="card"><div class="card-title">📊 今日市场总结</div><div class="card-body" style="padding:14px 18px;">';
-
-        // 资金情况
-        const totalAmt = (ms.total_amount / 1e8).toFixed(0);
-        const amtChg = ms.amount_change;
-        const amtChgStr = amtChg !== 0 ? '<span class="' + up(amtChg) + '">' + (amtChg > 0 ? '+' : '') + (amtChg / 1e8).toFixed(0) + '亿</span>' : '--';
-        html += '<div style="margin-bottom:12px;"><strong>💰 资金情况</strong><br>' +
-            '<span style="font-size:22px;font-weight:700;">' + totalAmt + '亿</span>' +
-            '<span style="font-size:13px;color:#999;margin-left:8px;">两市总成交额</span>' +
-            '<span style="font-size:13px;margin-left:12px;">较昨日: ' + amtChgStr + '</span>' +
-        '</div>';
-
-        // 资金流向
-        html += '<div style="margin-bottom:12px;"><strong>🏦 资金流向</strong><br>' +
-            '<span>主力资金: <span class="' + up(ms.main_force_net_inflow) + '">' + (ms.main_force_net_inflow >= 0 ? '+' : '') + (ms.main_force_net_inflow / 1e8).toFixed(2) + '亿</span></span>' +
-            '<span style="margin-left:16px;">沪市: <span class="' + up(ms.sh_main_force_inflow) + '">' + (ms.sh_main_force_inflow / 1e8).toFixed(2) + '亿</span></span>' +
-            '<span style="margin-left:16px;">深市: <span class="' + up(ms.sz_main_force_inflow) + '">' + (ms.sz_main_force_inflow / 1e8).toFixed(2) + '亿</span></span>' +
-        '</div>';
-
-        // 涨跌家数
-        const totalStocks = ms.rise_count + ms.fall_count + ms.flat_count;
-        html += '<div style="margin-bottom:12px;"><strong>📈 涨跌家数</strong><br>' +
-            '<span class="up">上涨 ' + ms.rise_count + '</span>' +
-            '<span style="margin-left:12px;" class="down">下跌 ' + ms.fall_count + '</span>' +
-            '<span style="margin-left:12px;color:#999;">平盘 ' + ms.flat_count + '</span>' +
-            '<span style="margin-left:12px;color:#999;">总数 ' + totalStocks + '</span>' +
-        '</div>';
-
-        // 涨幅居前板块
-        if (ms.sectors_top_gain && ms.sectors_top_gain.length > 0) {{
-            html += '<div style="margin-bottom:12px;"><strong>🏅 涨幅居前板块</strong><table><tr><th>板块</th><th>涨幅</th><th>成交额</th></tr>';
-            for (const s of ms.sectors_top_gain) {{
-                const pct = typeof s.change_pct === 'number' ? s.change_pct : 0;
-                html += '<tr><td>' + s.name + '</td><td class="' + up(pct) + '">' + fmtPct(pct) + '</td><td>' + ((s.inflow || 0) / 1e8).toFixed(0) + '亿</td></tr>';
-            }}
-            html += '</table></div>';
-        }}
-
-        // 跌幅居前板块
-        if (ms.sectors_top_fall && ms.sectors_top_fall.length > 0) {{
-            html += '<div style="margin-bottom:12px;"><strong>📉 跌幅居前板块</strong><table><tr><th>板块</th><th>跌幅</th><th>成交额</th></tr>';
-            for (const s of ms.sectors_top_fall) {{
-                const pct = typeof s.change_pct === 'number' ? s.change_pct : 0;
-                html += '<tr><td>' + s.name + '</td><td class="' + up(pct) + '">' + pct.toFixed(2) + '%</td><td>' + ((s.inflow || 0) / 1e8).toFixed(0) + '亿</td></tr>';
-            }}
-            html += '</table></div>';
-        }}
-
-        // 资金流入板块
-        if (ms.sectors_top_inflow && ms.sectors_top_inflow.length > 0) {{
-            html += '<div style="margin-bottom:12px;"><strong>⤴️ 资金流入前5板块</strong><table><tr><th>板块</th><th>资金流入</th></tr>';
-            for (const s of ms.sectors_top_inflow) {{
-                html += '<tr><td>' + s.name + '</td><td class="up">+' + ((s.inflow || 0) / 1e8).toFixed(2) + '亿</td></tr>';
-            }}
-            html += '</table></div>';
-        }}
-
-        // 资金流出板块
-        if (ms.sectors_top_outflow && ms.sectors_top_outflow.length > 0) {{
-            html += '<div style="margin-bottom:12px;"><strong>⤵️ 资金流出前5板块</strong><table><tr><th>板块</th><th>资金流出</th></tr>';
-            for (const s of ms.sectors_top_outflow) {{
-                html += '<tr><td>' + s.name + '</td><td class="down">' + ((s.inflow || 0) / 1e8).toFixed(2) + '亿</td></tr>';
-            }}
-            html += '</table></div>';
-        }}
-
-        html += '<div style="text-align:right;font-size:12px;color:#999;margin-top:4px;">🕐 ' + (ms.updated_at || '') + '</div>';
-        html += '</div></div>';
-
-        html += '<div class="last-update">🕐 ' + mkt.updated_at + '</div>';
-        html += '</div>'; // end tab-mkt
-
-        // ===== 涨停板 Tab =====
-        html += '<div id="tab-zt" style="display:none;">';
-        
-        // 日期选择器
-        const datesRes = await fetch('/api/limit-up/dates');
-        const datesData = await datesRes.json();
-        let dateOpts = '<option value="">请选择日期</option>';
-        const todayStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
-        for (const d of datesData.dates) {{
-            const label = d.slice(0,4) + '-' + d.slice(4,6) + '-' + d.slice(6,8);
-            const sel = d === todayStr ? ' selected' : '';
-            dateOpts += '<option value="' + d + '"' + sel + '>' + label + '</option>';
-        }}
-        html += '<div class="card"><div class="card-body" style="padding:12px 18px;display:flex;align-items:center;gap:10px;">';
-        html += '<label style="font-weight:600;">📅 选择日期:</label>';
-        html += '<select id="ztDateSelect" onchange="loadZtData()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;max-width:200px;">' + dateOpts + '</select>';
-        html += '<button onclick="loadZtData()" style="padding:6px 14px;background:#667eea;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">查询</button>';
-        html += '</div></div>';
-        
-        // 占位容器
-        html += '<div id="ztContent"></div>';
-
-        html += '<div style="text-align:right;padding-bottom:14px;"><a href="/api/limit-up/refresh" target="_blank" style="color:#667eea;font-size:13px;">🔄 手动刷新涨停数据 →</a></div>';
-        html += '</div>'; // end tab-zt
-
-        document.getElementById('content').innerHTML = html;
-        document.getElementById('updateTime').textContent = '更新时间: ' + mkt.updated_at;
-    }} catch (e) {{
-        document.getElementById('content').innerHTML = '<div class="error">❌ 加载失败: ' + e.message + '</div>';
-    }}
-}}
-
-async function loadZtData() {{
-    const sel = document.getElementById("ztDateSelect");
-    const date = sel ? sel.value : "";
-    if (!date) {{
-        document.getElementById("ztContent").innerHTML = '<div style="text-align:center;padding:30px;color:#999;">请选择日期</div>';
-        return;
-    }}
-    try {{
-        const [ztRes, indRes] = await Promise.all([
-            fetch('/api/limit-up?date=' + date),
-            fetch('/api/limit-up/industry?date=' + date)
-        ]);
-        const zt = await ztRes.json();
-        const ind = await indRes.json();
-
-        let html = '';
-
-        // 涨停统计
-        html += '<div class="card"><div class="card-title">🚀 涨停板 <span style="font-size:13px;color:#999;font-weight:400;">' + date.slice(0,4) + '-' + date.slice(4,6) + '-' + date.slice(6,8) + ' 共 ' + zt.count + ' 只</span></div><div class="card-body"><table><tr><th>代码</th><th>名称</th><th>连板</th><th>涨幅</th><th>价格</th><th>换手</th><th>封板</th><th>炸板</th><th>封板资金</th><th>行业</th></tr>';
-        for (const s of zt.stocks) {{
-            const bd = boardLabel(s.board_times);
-            html += `<tr><td>${{s.code}}</td><td>${{bd}} ${{s.name}}</td><td style="font-weight:600;">${{s.board_times}}板</td><td class="up">+${{s.change_pct.toFixed(2)}}%</td><td>${{s.price.toFixed(2)}}</td><td>${{s.turnover_rate.toFixed(2)}}%</td><td>${{s.seal_first_time}}-<br>${{s.seal_last_time}}</td><td>${{s.bomb_times}}次</td><td>${{(s.seal_fund/10000).toFixed(0)}}万</td><td>${{s.industry}}</td></tr>`;
-        }}
-        html += '</table></div></div>';
-
-        // 行业分布
-        html += '<div class="card"><div class="card-title">🏭 涨停行业分布</div><div class="card-body"><table><tr><th>行业</th><th>涨停数</th><th>代表个股</th></tr>';
-        for (const i of ind.industries) {{
-            html += `<tr><td>${{i.industry}}</td><td style="font-weight:600;">${{i.count}}只</td><td>${{i.top_stocks}}</td></tr>`;
-        }}
-        html += '</table></div></div>';
-
-        document.getElementById("ztContent").innerHTML = html;
-    }} catch (e) {{
-        document.getElementById("ztContent").innerHTML = '<div class="error">❌ 加载失败: ' + e.message + '</div>';
-    }}
-}}
-
-function showTab(tab) {{
-    document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.style.background = '#f0f2f5';
-        b.style.color = '#333';
-    }});
-    event.target.style.background = '#667eea';
-    event.target.style.color = '#fff';
-    document.getElementById('tab-mkt').style.display = tab === 'mkt' ? 'block' : 'none';
-    document.getElementById('tab-zt').style.display = tab === 'zt' ? 'block' : 'none';
-    if (tab === 'zt') {{
-        loadZtData();
-    }}
-}}
-
-loadData();
-setInterval(loadData, 60000);
-</script>
-</body>
-</html>"""
 
 
 def start_server():

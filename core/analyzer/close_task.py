@@ -267,49 +267,62 @@ def _load_rise_fall_amount(trade_date: str) -> dict:
 
 
 def _load_yesterday_picks(trade_date: str) -> list:
-    """从 daily_picks 读取昨日选股及今日表现"""
-    today = datetime.now()
-    today_str = today.strftime("%Y%m%d")
-    
-    # 找最近一个选股日
+    """从 daily_picks 读取选股入库日T的股票，计算 ((T+2收盘价) - (T+1开盘价)) / (T+1开盘价) × 100%"""
+    # 找最近一个选股日（排除当天，拿前一个交易日的入库日）
     yesterday = _db.fetchone(
         "SELECT DISTINCT trade_date FROM daily_picks WHERE trade_date < %s "
-        "ORDER BY trade_date DESC LIMIT 1", (today_str,))
+        "ORDER BY trade_date DESC LIMIT 1 OFFSET 1", (trade_date,))
     if not yesterday:
         return None
-    
-    ymd = yesterday['trade_date']
-    
+
+    ymd = yesterday['trade_date']  # T 日
+
+    # 找 T+1（T 之后第一个交易日）
+    t1_row = _db.fetchone(
+        "SELECT trade_date FROM stock_daily "
+        "WHERE trade_date > %s ORDER BY trade_date ASC LIMIT 1", (ymd,))
+    if not t1_row:
+        return None
+    t1 = t1_row['trade_date']
+
+    # 找 T+2（T+1 之后下一个交易日）
+    t2_row = _db.fetchone(
+        "SELECT trade_date FROM stock_daily "
+        "WHERE trade_date > %s ORDER BY trade_date ASC LIMIT 1", (t1,))
+    if not t2_row:
+        return None
+    t2 = t2_row['trade_date']
+
+    # 读取选股入库日 T 的股票列表
     rows = _db.fetchall(
         "SELECT code, name, total_score, `rank`, highlights, source "
-        "FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank` ASC",
+        "FROM daily_picks WHERE trade_date=%s ORDER BY total_score DESC",
         (ymd,))
-    
+
     if not rows:
         return None
-    
-    # 查今日行情
+
     codes = [r['code'] for r in rows]
-    today_quotes = {}
-    if codes:
-        placeholders = ','.join(['%s'] * len(codes))
-        quotes = _db.fetchall(
-            f"SELECT code, close, change_pct FROM stock_daily "
-            f"WHERE code IN ({placeholders}) AND trade_date=%s",
-            codes + [today_str])
-        for q in quotes:
-            today_quotes[q['code']] = q
-    
-    # 查选股日行情
-    pick_quotes = {}
-    if codes:
-        pk = _db.fetchall(
-            f"SELECT code, close FROM stock_daily "
-            f"WHERE code IN ({placeholders}) AND trade_date=%s",
-            codes + [ymd])
-        for q in pk:
-            pick_quotes[q['code']] = q
-    
+    placeholders = ','.join(['%s'] * len(codes))
+
+    # 查 T+1 开盘价
+    t1_opens = {}
+    t1_q = _db.fetchall(
+        f"SELECT code, open FROM stock_daily "
+        f"WHERE code IN ({placeholders}) AND trade_date=%s",
+        codes + [t1])
+    for q in t1_q:
+        t1_opens[q['code']] = q
+
+    # 查 T+2 收盘价
+    t2_closes = {}
+    t2_q = _db.fetchall(
+        f"SELECT code, close FROM stock_daily "
+        f"WHERE code IN ({placeholders}) AND trade_date=%s",
+        codes + [t2])
+    for q in t2_q:
+        t2_closes[q['code']] = q
+
     result = []
     for r in rows:
         code = r['code']
@@ -317,18 +330,25 @@ def _load_yesterday_picks(trade_date: str) -> list:
         highlights_val = r['highlights'] or ''
         source = r['source'] or ''
         reason = highlights_val if highlights_val else (source if source else f"评分{r['total_score']}分")
-        
-        tq = today_quotes.get(code)
-        pq = pick_quotes.get(code)
-        
-        if tq and pq and pq['close'] and float(pq['close']) > 0:
-            chg = (float(tq['close']) - float(pq['close'])) / float(pq['close']) * 100
-        else:
+
+        t1o = t1_opens.get(code)
+        t2o = t2_closes.get(code)
+
+        if not t1o or not t2o:
             continue
-        
+
+        t1_open = float(t1o['open'])
+        t2_close = float(t2o['close'])
+
+        if t1_open <= 0:
+            continue
+
+        # 收益率 = (T+2收盘价 - T+1开盘价) / T+1开盘价 × 100%
+        chg = (t2_close - t1_open) / t1_open * 100
+
         is_zt = chg >= 9.8
         is_near_zt = 7 <= chg < 9.8
-        
+
         result.append({
             'name': name,
             'code': code,
@@ -337,8 +357,9 @@ def _load_yesterday_picks(trade_date: str) -> list:
             'is_near_zt': is_near_zt,
             'result': 'win' if chg > 0 else 'loss',
             'reason': reason,
+            'total_score': int(r['total_score']) if r['total_score'] else 0,
         })
-    
+
     return result
 
 
@@ -360,13 +381,6 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
     base_path = os.path.dirname(__file__)
     with open(os.path.join(base_path, 'daily_picks_v2.json'), 'w') as f:
         json.dump(results, f, ensure_ascii=False, default=str, indent=2)
-    
-    up_top5 = results.get('up_top5', [])
-    non_up_top5 = results.get('non_up_top5', [])
-    
-    # 从外部API获取换手率
-    all_codes = [s['code'] for s in up_top5] + [s['code'] for s in non_up_top5]
-    quotes = _get_quotes_for_candidates([{'code': c} for c in all_codes])
     
     # 分封板时间早/午（从 daily_limit_up 获取）
     def _seal_time(code):
@@ -412,21 +426,27 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
         'total_candidates': len(results.get('scored', [])),
         'max_name': results.get('scored', [{}])[0].get('name', '') if results.get('scored') else '',
         'max_score': results.get('scored', [{}])[0].get('total_score', 0) if results.get('scored') else 0,
-        'market_status': results.get('market', {}).get('status', '正常'),
-        'market_change': results.get('market', {}).get('sh_change', 0),
-        'limit_up_total': results.get('total_limit_up', 0),
-        'hot_industries': results.get('hot_industries', [])[:4] if results.get('hot_industries') else [],
-        'up_top5': [],
-        'non_up_top5': [],
-        'top3_advice': [],
     }
     
-    for s in up_top5:
+    # 构建B/C/D分组TOP3（按评分区间分组，每组取评分降序TOP3）
+    scored = results.get('scored', [])
+    score_groups = {'B': [], 'C': [], 'D': []}
+    for s in scored:
+        sc = int(s.get('total_score', 0))
+        if 60 <= sc < 65:
+            group = 'B'
+        elif 65 <= sc < 70:
+            group = 'C'
+        elif sc >= 70:
+            group = 'D'
+        else:
+            continue  # <60分不展示
+        
         code = s['code']
         name = s['name']
         bd = s.get('breakdown', {})
         dims = {
-            '筹码': bd.get('筹码结构', {}).get('score', 0),
+            '笀码': bd.get('笀码结构', {}).get('score', 0),
             '接力': bd.get('资金接力', {}).get('score', 0),
             '板块': bd.get('板块环境', {}).get('score', 0),
             '趋势': bd.get('趋势位置', {}).get('score', 0),
@@ -434,31 +454,30 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
             '位置': bd.get('位置评估', {}).get('score', 0),
         }
         
-        # 换手+封板
+        # 换手+封板备注（复用已有函数）
         t_note = _turnover_note(code)
         s_time, s_pts_code = _seal_time(code)
-        
         notes = []
         if t_note:
             notes.append(t_note)
         if s_time and s_pts_code > 0:
             notes.append(f"{s_time}({s_pts_code})")
         
-        # 风险
+        # 风险提示
         risks = list(s.get('risks', []))
         if not risks:
-            chip = dims.get('筹码', 0)
+            chip = dims.get('笀码', 0)
             trend = dims.get('趋势', 0)
             if chip < 5:
-                risks.append('筹码偏高')
+                risks.append('笀码偏高')
             elif chip < 10:
-                risks.append('筹码偏高')
+                risks.append('笀码偏高')
             if trend < 5:
                 risks.append('趋势偏弱')
             if dims.get('位置', 0) < 8:
                 risks.append('位置一般')
         
-        picks_data['up_top5'].append({
+        score_groups[group].append({
             'name': name,
             'code': code,
             'score': s['total_score'],
@@ -468,211 +487,13 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
             'risks': risks[:2],
         })
     
-    # 区间潜伏
-    for s in non_up_top5:
-        code = s['code']
-        name = s['name']
-        bd = s.get('breakdown', {})
-        dims = {
-            '筹码': bd.get('筹码结构', {}).get('score', 0),
-            '接力': bd.get('资金接力', {}).get('score', 0),
-            '板块': bd.get('板块环境', {}).get('score', 0),
-            '趋势': bd.get('趋势位置', {}).get('score', 0),
-            '大盘': bd.get('大盘安全', {}).get('score', 0),
-            '位置': bd.get('位置评估', {}).get('score', 0),
-        }
-        
-        notes = []
-        pos_s = dims.get('位置', 0)
-        if pos_s >= 8:
-            notes.append(f"位置适中(+{pos_s})")
-        
-        # 均线多头
-        ma5 = s.get('_ma5', 0)
-        close_now = s.get('today_close', 0)
-        if ma5 > 0 and close_now and isinstance(close_now, (int, float)) and isinstance(ma5, (int, float)):
-            notes.append(f"均线多头排列(MA5>{ma5:.1f})(+8)")
-        
-        if not notes:
-            notes.append(f"60日底部{s.get('_60d_position', 0):.0f}%分位")
-        
-        risks = list(s.get('risks', []))
-        if not risks:
-            if dims.get('位置', 0) < 8:
-                risks.append('位置一般')
-        
-        picks_data['non_up_top5'].append({
-            'name': name,
-            'code': code,
-            'score': s['total_score'],
-            'source': s.get('source', ''),
-            'dims': dims,
-            'notes': notes,
-            'risks': risks[:2],
-        })
+    # 每组按评分降序排列，截取TOP3
+    for g in ['B', 'C', 'D']:
+        score_groups[g].sort(key=lambda x: x['score'], reverse=True)
+        score_groups[g] = score_groups[g][:3]
     
-    # TOP3 盯盘建议
-    all_top = up_top5[:5] + non_up_top5[:5]
-    all_sorted = sorted(all_top, key=lambda x: x.get('total_score', 0), reverse=True)
-    for i, s in enumerate(all_sorted[:3]):
-        code = s['code']
-        name = s['name']
-        bd = s.get('breakdown', {})
-        pos_s = bd.get('位置评估', {}).get('score', 0)
-        trend_s = bd.get('趋势位置', {}).get('score', 0)
-        pos_tag = '低位' if pos_s >= 15 else ('中位' if pos_s >= 8 else '高位')
-        trend_tag = '趋势强' if trend_s >= 14 else ('趋势好' if trend_s >= 10 else '趋势弱')
-        
-        group = s.get('group', '')
-        if group == '涨停回踩':
-            advice = "首板，竞价量比>3可参与，评分偏低，小仓试"
-        elif group == '区间潜伏':
-            advice = "回踩5日线低吸，竞价量比>3可参与"
-        else:
-            advice = "竞价关注量比>3、高开的候选股"
-        
-        picks_data['top3_advice'].append({
-            'name': name,
-            'code': code,
-            'score': s['total_score'],
-            'source': s.get('source', ''),
-            'position': pos_tag,
-            'trend': trend_tag,
-            'advice': advice,
-        })
-    
+    picks_data['score_groups'] = score_groups
     return picks_data
-
-
-def _build_react_data(trade_date: str, yesterday_picks: list) -> dict:
-    """构建ReAct复盘数据（直接从 daily_picks + stock_daily）"""
-    today_str = datetime.now().strftime('%Y%m%d')
-    
-    result = {
-        'pick_date': '',
-        'check_date': today_str,
-        'total_count': 0,
-        'win_rate': 0,
-        'avg_return': 0,
-        'max_gain': 0,
-        'max_loss': 0,
-        'big_gain_count': 0,
-        'score_groups': [],
-        'group_groups': [],
-        'past_week': {'count': 0, 'win_rate': 0, 'avg_return': 0},
-    }
-    
-    # --- 今日选股复盘 ---
-    if yesterday_picks:
-        total = len(yesterday_picks)
-        up = sum(1 for s in yesterday_picks if s['result'] == 'win')
-        avg_ret = sum(s['change_pct'] for s in yesterday_picks) / total if total > 0 else 0
-        result.update({
-            'pick_date': '',
-            'total_count': total,
-            'win_rate': round(up / total * 100, 0) if total > 0 else 0,
-            'avg_return': round(avg_ret, 2),
-            'max_gain': round(max((s['change_pct'] for s in yesterday_picks), default=0), 2),
-            'max_loss': round(min((s['change_pct'] for s in yesterday_picks), default=0), 2),
-            'big_gain_count': sum(1 for s in yesterday_picks if s['change_pct'] >= 2),
-        })
-        
-        # 评分分组 + 推荐分组
-        from utils.dao import get_db
-        try:
-            db = get_db()
-            yest_date = db.fetchone(
-                "SELECT DISTINCT trade_date FROM daily_picks WHERE trade_date < %s "
-                "ORDER BY trade_date DESC LIMIT 1", (today_str,))
-            if yest_date:
-                ymd = yest_date['trade_date']
-                result['pick_date'] = ymd
-                
-                scored = db.fetchall(
-                    "SELECT code, total_score, source FROM daily_picks WHERE trade_date=%s", (ymd,))
-                score_map = {r['code']: int(r['total_score']) for r in scored if r['total_score']}
-                source_map = {r['code']: r.get('source', '') for r in scored}
-                db.close()
-                
-                groups = {'高分(≥50)': [], '中分(40-50)': [], '低分(<40)': []}
-                groups2 = {'涨停接力': [], '区间潜伏': []}
-                for s in yesterday_picks:
-                    sc = score_map.get(s['code'], 40)
-                    if sc >= 50:
-                        groups['高分(≥50)'].append(s['change_pct'])
-                    elif sc >= 40:
-                        groups['中分(40-50)'].append(s['change_pct'])
-                    else:
-                        groups['低分(<40)'].append(s['change_pct'])
-                    src = source_map.get(s['code'], '')
-                    if src in ('涨停热点', '涨停回踩', '涨停接力'):
-                        groups2['涨停接力'].append(s['change_pct'])
-                    else:
-                        groups2['区间潜伏'].append(s['change_pct'])
-                
-                grp = []
-                for label, chgs in groups.items():
-                    if chgs:
-                        wr = len([c for c in chgs if c > 0]) / len(chgs) * 100
-                        ag = sum(chgs) / len(chgs)
-                        icon = '✅' if wr >= 50 else ('⚠️' if wr >= 30 else '❌')
-                        grp.append((label, len(chgs), round(wr), round(ag, 2), icon))
-                result['score_groups'] = grp
-                
-                grp2 = []
-                for label, chgs in groups2.items():
-                    if chgs:
-                        wr = len([c for c in chgs if c > 0]) / len(chgs) * 100
-                        ag = sum(chgs) / len(chgs)
-                        icon = '✅' if wr >= 50 else ('⚠️' if wr >= 30 else '❌')
-                        grp2.append((label, len(chgs), round(wr), round(ag, 2), icon))
-                result['group_groups'] = grp2
-        except Exception:
-            pass
-    
-    # --- 近一周统计 ---
-    try:
-        from utils.dao import get_db
-        db = get_db()
-        week_ago = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-        rows = db.fetchall(
-            "SELECT DISTINCT trade_date FROM daily_picks WHERE trade_date>=%s AND trade_date<=%s "
-            "ORDER BY trade_date DESC", (week_ago, today_str))
-        if rows:
-            pick_dates = [r['trade_date'] for r in rows]
-            valid_chgs = []
-            for pd in pick_dates:
-                if pd == today_str:
-                    continue
-                check_dt = datetime.strptime(pd, '%Y%m%d') + timedelta(days=1)
-                while check_dt.weekday() >= 5:
-                    check_dt += timedelta(days=1)
-                check_d = check_dt.strftime('%Y%m%d')
-                
-                p_rows = db.fetchall(
-                    "SELECT p.code, sd2.close as pick_close "
-                    "FROM daily_picks p "
-                    "JOIN stock_daily sd2 ON p.code=sd2.code AND sd2.trade_date=p.trade_date "
-                    "WHERE p.trade_date=%s AND sd2.close>0", (pd,))
-                for pr in p_rows:
-                    today_row = db.fetchone(
-                        "SELECT close FROM stock_daily WHERE code=%s AND trade_date=%s",
-                        (pr['code'], check_d))
-                    if today_row and today_row['close']:
-                        chg = (float(today_row['close']) - float(pr['pick_close'])) / float(pr['pick_close']) * 100
-                        valid_chgs.append(chg)
-            db.close()
-            
-            if valid_chgs:
-                result['past_week'] = {
-                    'count': len(valid_chgs),
-                    'win_rate': round(len([c for c in valid_chgs if c > 0]) / len(valid_chgs) * 100, 0),
-                    'avg_return': round(sum(valid_chgs) / len(valid_chgs), 2),
-                }
-    except Exception:
-        pass
-    
-    return result
 
 
 def _build_position_data(trade_date: str) -> list:
@@ -808,19 +629,18 @@ def daily_close_task() -> str:
     yesterday_picks = _load_yesterday_picks(trade_date)
     _log_timing(_t_start, "昨日选股")
 
-    # ReAct（完整三闭环：Observe→Thought→Act）
+    # ReAct（新：20日滚动统计 + 评分归因）
     try:
-        from core.analyzer.pick_react import run_react_analysis
-        react_text = run_react_analysis(check_date=trade_date)
-        logger.info(f'ReAct 三闭环分析完成')
+        from core.analyzer.pick_react import build_react_report
+        from core.reporter.close_report_tpl import render_react_section
+        react_data = build_react_report(check_date=trade_date)
+        react_text = render_react_section(react_data)
+        note = react_data.get('window_info', {}).get('note') or '20天'
+        logger.info(f'ReAct 复盘分析完成: {note}')
     except Exception as e:
-        logger.warning(f'ReAct 分析异常，回退到简版: {e}')
+        logger.warning(f'ReAct 分析异常: {e}')
         react_text = ''
     _log_timing(_t_start, "ReAct分析")
-    
-    if not react_text:
-        # fallback: 简版统计
-        react_data = _build_react_data(trade_date, yesterday_picks)
 
     # 明日候选
     picks_data = _build_picks_data(trade_date, [])
@@ -850,7 +670,7 @@ def daily_close_task() -> str:
             'down_count': len(dt_board),
         },
         'yesterday_picks': yesterday_picks if isinstance(yesterday_picks, list) else [],
-        'react_report': react_text or react_data,
+        'react_report': react_data if isinstance(react_data, dict) and react_data.get('window_info') else (react_text or ''),
         'picks': picks_data,
         'positions': position_data,
     }

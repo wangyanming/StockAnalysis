@@ -1,0 +1,44 @@
+{
+  "id": "task-router",
+  "name": "Task Router",
+  "description": "Enforces Multi-Agent workflow: blocks main agent from writing files directly",
+  "version": "1.0.0",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "hooks": [
+      "before_tool_call",
+      "subagent_spawned"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "projectPathMarker": {
+        "type": "string",
+        "default": "StockAnalysis/",
+        "description": "Project path marker to detect file operations"
+      },
+      "exemptAgents": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "product-agent",
+          "architecture-agent",
+          "engineering-agent",
+          "qa-agent"
+        ],
+        "description": "Agent IDs exempt from tool blocking"
+      },
+      "approvalTimeoutMs": {
+        "type": "number",
+        "default": 120000,
+        "description": "Timeout for requireApproval prompts in milliseconds"
+      }
+    },
+    "additionalProperties": false
+  }
+}

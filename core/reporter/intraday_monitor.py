@@ -32,14 +32,7 @@ def _get_market_summary_cached():
         ms = f.get_market_summary()
         if ms and ms.get('up_count', 0) > 0:
             logger.info(f'盘中实时涨跌家数: 涨{ms["up_count"]} 跌{ms["down_count"]}')
-            # 成交额实时拿不到时填补昨天数据
-            if ms.get('total_amount', 0) == 0:
-                from utils.dao import get_db
-                db = get_db()
-                yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-                sp = db.fetchone("SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'", (yesterday,))
-                if sp and sp['total_amt'] and sp['total_amt'] > 0:
-                    ms['total_amount'] = float(sp['total_amt'])
+
             _market_summary_cache = ms
             _market_summary_cache_time = now
             return ms
@@ -74,7 +67,7 @@ def fetch_index(idx_code: str):
 
 
 def fetch_realtime_market_summary() -> dict:
-    """盘中实时涨跌家数+成交额 - 优先实时API,回退至 sector_performance 兜底"""
+    """盘中实时涨跌家数+成交额 - 仅用实时API,拿不到就返回空"""
     try:
         d = _get_market_summary_cached()
         if d and d.get('up_count', 0) > 0:
@@ -86,20 +79,6 @@ def fetch_realtime_market_summary() -> dict:
             }
     except Exception as e:
         logger.warning(f'实时市场汇总获取失败: {e}')
-    # 回退:从 sector_performance 取昨日数据
-    from utils.dao import get_db
-    db = get_db()
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-    sp = db.fetchone(
-        "SELECT SUM(rise_count) as rise, SUM(fall_count) as fall, SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
-        (yesterday,))
-    if sp and sp['rise'] and sp['rise'] > 0:
-        return {
-            'rise': int(sp['rise']),
-            'fall': int(sp['fall'] or 0),
-            'flat': 0,
-            'total_yi': float(sp['total_amt'] or 0) / 1e8,
-        }
     return {'rise': '?', 'fall': '?', 'flat': 0, 'total_yi': 0}
 
 
@@ -496,7 +475,7 @@ def run():
     if rise is None:
         try:
             ms = _get_market_summary_cached()
-            if ms:
+            if ms and ms.get('up_count', 0) > 0:
                 rise = ms.get('up_count') or 0
                 fall = ms.get('down_count') or 0
                 flat = ms.get('flat_count') or 0

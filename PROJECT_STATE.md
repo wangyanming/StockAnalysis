@@ -549,6 +549,15 @@
 - [ ] lhb_fetcher 集成到 daily_fetch.py 的定时采集流程
 - [ ] 前端龙虎榜展示（Web仪表盘）
 
+## 最新变更 (2026-07-21) — Web页面Bug修复
+
+| 文件 | 改动内容 | 状态 |
+|------|---------|------|
+| `core/fetcher/daily_fetch.py` | **修复1** — 涨停拉取成功后追加 `save_industry_stats()` 调用，`limit_up_industry_stats` 表有数据 | ✅ |
+| `core/analyzer/daily_pick_v2.py` | **修复2** — `_save_picks_to_db()` 写入时按 `r.get('group')` 为 `data_tag` 赋值：涨停回踩→`limitup`，区间潜伏→`range` | ✅ |
+| `web_server.py` | **修复3** — 选股追踪页面入选日格式化为 `YYYY-MM-DD`（`fmtDate()`函数），修复 `60721`截断 | ✅ |
+| `web_server.py` | **修复4** — 新增选股追踪Tab，表格表头可点击排序（评分/T+1~T+5），纯前端JS实现，默认按评分降序，↑↓指示箭头 | ✅ |
+
 ## 最新变更 (2026-07-16)
 
 | 文件 | 改动内容 | 状态 |

@@ -151,6 +151,13 @@ def fetch_all(do_stock_daily: bool = False):
                 else:
                     logger.error(f"涨停10次重试均失败: {e2}")
                     raise e2
+        # 行业统计：涨停拉取成功后，同步保存行业分布
+        if limit_up_count > 0:
+            try:
+                zt.save_industry_stats()
+                logger.info(f"涨停行业分布已保存")
+            except Exception as e_inds:
+                logger.warning(f"行业统计保存失败: {e_inds}")
         results['limit_up'] = f'{limit_up_count}只'
     except Exception as e:
         results['limit_up'] = f'ERR: {e}'
