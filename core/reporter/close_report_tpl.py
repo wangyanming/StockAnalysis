@@ -370,10 +370,11 @@ def render_report(data: dict) -> str:
             parts.append("📋 持仓股：关注要点")
             parts.append("─" * 20)
             for p in positions:
+                # 渲染防御：用 .get() 取值，即使上游缺键也不会崩溃（正常路径值不变）
                 parts.append(f"{p['name']}({p['code']}): 成本{p['cost_price']}×{p['shares']}={p['cost_total']:.0f}")
-                parts.append(f"现价{p['close']:.2f} 市值{p['cur_total']:.0f} 盈亏{p['pnl_pct']:+.2f}% {p['pnl_sym']}")
+                parts.append(f"现价{p.get('close', 0):.2f} 市值{p.get('cur_total', 0):.0f} 盈亏{p.get('pnl_pct', 0):+.2f}% {p.get('pnl_sym', '⚠️')}")
                 if p.get('amount_yi'):
-                    parts.append(f"成交{p['amount_yi']:.1f}亿 换手{p['turnover']:.2f}%")
+                    parts.append(f"成交{p['amount_yi']:.1f}亿 换手{p.get('turnover', 0):.2f}%")
                 flg = p.get('profit_flag')
                 if flg == 'stop':
                     parts.append(f"⚠️ 已触发止损线-5%，先做三问判断（量能/板块/时间），详见 docs/交易纪律.md")
@@ -424,7 +425,9 @@ def render_react_section(data: dict) -> str:
     else:
         date_str = ''
 
+    lines.append('')
     lines.append('─' * 30)
+    lines.append('')
     lines.append('📊 ReAct复盘：近20日滚动统计')
     if date_str:
         lines.append(date_str)
@@ -444,7 +447,9 @@ def render_react_section(data: dict) -> str:
 
     # 评分归因分析
     if dims:
+        lines.append('')
         lines.append('📈 评分归因分析：')
+        lines.append('')
         for d in dims:
             dim_label = d.get('dim_label', '')
             full_score = d.get('full_score', 0)
@@ -474,42 +479,45 @@ def render_react_section(data: dict) -> str:
                     lines.append(f'     {label}: 无样本')
                     continue
 
-                # 胜率标记
-                marker = ''
-                if cnt >= 3:
-                    if wr >= 60:
-                        marker = ' ✅'
-                    elif wr < 40:
-                        marker = ' ❌'
-
                 # 样本不足标记
-                sample_note = ''
+                marker = ''
                 if cnt < 3:
                     marker = '（样本不足）'
 
-                lines.append(f'     {label}: {cnt}只 胜率{wr:.1f}% 均{avg_r:+.2f}%{marker}')
+                lines.append(f'     {label}: {cnt}只  胜率{wr:.1f}%  均{avg_r:+.2f}%{marker}')
 
-            # 预测力 + 行动
-            if pp and action:
+            # 预测力 + 区分度
+            diff = d.get('diff')
+            if diff is not None:
+                diff_str = f'{diff:+.1f}pp'
+                pred_check = ' ✅' if pp == '强' else ('' if pp == '中' else ' ❌')
+                pred_display = {'强': '强', '中': '中', '弱': '弱'}.get(pp, pp)
+                lines.append(f'     区分度: {diff_str}  → 预测力：{pred_display}{pred_check}')
+            elif pp and action:
                 pred_map = {'强': '强', '中': '中', '弱': '弱'}
                 pred_label = pred_map.get(pp, pp)
                 lines.append(f'     预测力: {pred_label} | {action}')
+
+            lines.append('')  # 每个维度结束后加空行
 
         lines.append('  （位置评估暂不纳入）')
         lines.append('')
 
     # 分组统计
     if groups:
+        lines.append('')
         lines.append('📋 分组统计：')
+        lines.append('')
         for g in groups:
             label = g.get('label', '')
             cnt = g.get('count', 0)
             wr = g.get('win_rate', 0)
             avg_r = g.get('avg_return', 0)
             lines.append(f'  {label}: {cnt}只 胜率{wr:.1f}% 均{avg_r:+.2f}%')
-        lines.append('')
+            lines.append('')
 
     # 自优化建议
+    lines.append('')
     lines.append('⚙️ 自优化建议：')
     if ra.get('has_changes'):
         for ch in ra.get('changes', []):

@@ -320,9 +320,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_json({"dates": dates, "default_date": default_date})
 
     def api_picks(self, params):
-        """API: 选股追踪 - 按日期和维度筛选候选股，返回后续5个交易日涨跌幅"""
-        tag = params.get("tag", ["all"])[0]
-
+        """API: 选股追踪 - 按日期筛选候选股，返回T+1/T+2交易数据及分组概览统计"""
         from utils.dao import get_db
         db = get_db()
 
@@ -330,15 +328,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         dates_rows = db.fetchall("SELECT DISTINCT trade_date FROM daily_picks ORDER BY trade_date DESC")
         available_dates = [str(r["trade_date"]) for r in dates_rows]
 
-        # 2. 默认日期逻辑：17:00前默认展示最新日期（昨天选股），17:00后默认展示今天（T日选股）
-        #    如果今天已有选股数据则默认选中今天，否则选中最新日期
+        # 2. 默认日期逻辑：15:30前默认最新日期，15:30后如果今天有数据则默认今天
         today = datetime.now().strftime("%Y%m%d")
         now_hour = datetime.now().hour
-        # 判断今天是否已有选股数据
+        now_min = datetime.now().minute
         has_today = today in available_dates
-        # 17:00前：今天选股还没跑，默认用最新日期（昨天或更早）
-        # 17:00后：如果今天有选股数据则默认用今天，否则用最新日期
-        if now_hour < 17:
+        if now_hour < 15 or (now_hour == 15 and now_min < 30):
             default_date = available_dates[0] if available_dates else today
         else:
             default_date = today if has_today else (available_dates[0] if available_dates else today)
@@ -346,96 +341,213 @@ class RequestHandler(BaseHTTPRequestHandler):
         date_str = params.get("date", [default_date])[0]
         date_str = date_str.replace("-", "")
 
-        # 2. 按日期和维度筛选候选股
-        if tag == "all":
-            rows = db.fetchall(
-                "SELECT * FROM daily_picks WHERE trade_date = %s ORDER BY total_score DESC",
-                (date_str,)
-            )
-        else:
-            rows = db.fetchall(
-                "SELECT * FROM daily_picks WHERE trade_date = %s AND data_tag = %s ORDER BY total_score DESC",
-                (date_str, tag)
-            )
+        # 3. 个股范围：total_score >= 60，按total_score DESC排序
+        rows = db.fetchall(
+            "SELECT * FROM daily_picks WHERE trade_date = %s AND total_score >= 60 ORDER BY total_score DESC",
+            (date_str,)
+        )
 
-        # 3. 获取后续5个交易日
-        def _get_next_trade_dates(base_date, n=5):
-            """获取base_date之后n个交易日"""
-            all_dates = db.fetchall(
+        def _get_nth_trade_day(base_date, offset):
+            """获取base_date之后第offset个交易日（offset=1为T+1）"""
+            all_dates_rows = db.fetchall(
                 "SELECT DISTINCT trade_date FROM stock_daily WHERE trade_date > %s ORDER BY trade_date ASC LIMIT %s",
-                (base_date, n + 10)  # 多取一些，跳过非交易日
+                (base_date, offset + 5)
             )
-            dates = [r["trade_date"] for r in all_dates]
-            # 去重并取前n个
-            seen = set()
-            result = []
-            for d in dates:
-                if d not in seen:
-                    seen.add(d)
-                    result.append(d)
-                if len(result) >= n:
+            unique = []
+            for r in all_dates_rows:
+                if r['trade_date'] not in unique:
+                    unique.append(r['trade_date'])
+                if len(unique) >= offset:
                     break
-            return result
+            return unique[offset - 1] if len(unique) >= offset else None
 
-        # 4. 组装返回值
+        def _get_one(code, trade_date, field):
+            """辅助：查stock_daily表中某股票某日某字段"""
+            if not trade_date:
+                return None
+            r = db.fetchone(
+                f"SELECT {field} FROM stock_daily WHERE code = %s AND trade_date = %s",
+                (code, trade_date)
+            )
+            if r and r[field] is not None:
+                return float(r[field])
+            return None
+
+        # 4. 组装个股数据
         picks = []
         for row in rows:
-            # 映射 data_tag 为显示名称
-            tag_display_map = {"real": "涨停接力", "simulated": "区间潜伏", "limitup": "涨停接力", "range": "区间潜伏"}
-            display_tag = tag_display_map.get(row.get("data_tag", "") or "", row.get("data_tag", ""))
-
-            # 维度分
-            dimensions = {
-                "score_chip": row.get("score_chip", 0) or 0,
-                "score_money": row.get("score_money", 0) or 0,
-                "score_sector": row.get("score_sector", 0) or 0,
-                "score_trend": row.get("score_trend", 0) or 0,
-                "score_market": row.get("score_market", 0) or 0,
-                "score_position": row.get("score_pos", 0) or 0,
-            }
-
-            # 后续5个交易日涨跌幅
-            next_dates = _get_next_trade_dates(date_str)
-            tracking = []
-            for nd in next_dates:
-                tr = db.fetchone(
-                    "SELECT change_pct FROM stock_daily WHERE code = %s AND trade_date = %s",
-                    (row["code"], nd)
-                )
-                if tr and tr["change_pct"] is not None:
-                    tracking.append({
-                        "date": nd,
-                        "change_pct": round(float(tr["change_pct"]), 2)
-                    })
-                else:
-                    tracking.append({
-                        "date": nd,
-                        "change_pct": None
-                    })
-
-            # 查询入选价（当天收盘价）
+            code = row["code"]
             entry = db.fetchone(
                 "SELECT close FROM stock_daily WHERE code = %s AND trade_date = %s",
-                (row["code"], date_str)
+                (code, date_str)
             )
             entry_price = float(entry["close"]) if entry and entry["close"] else 0
 
+            t1_date = _get_nth_trade_day(date_str, 1)
+            t2_date = _get_nth_trade_day(date_str, 2)
+
+            t1_open = _get_one(code, t1_date, "open")
+            t1_close = _get_one(code, t1_date, "close")
+            t1_change_pct = round((t1_close - t1_open) / t1_open * 100, 2) if t1_open and t1_close else None
+
+            t2_open = _get_one(code, t2_date, "open")
+            t2_close = _get_one(code, t2_date, "close")
+            t2_change_pct = round((t2_close - t2_open) / t2_open * 100, 2) if t2_open and t2_close else None
+
+            # return_pct = (T+2收盘 - T+1开盘) / T+1开盘 x 100%
+            return_pct = round((t2_close - t1_open) / t1_open * 100, 2) if t1_open and t2_close else None
+
             picks.append({
-                "code": row["code"],
+                "code": code,
                 "name": row["name"],
-                "total_score": row.get("total_score", 0) or 0,
-                "data_tag": display_tag,
                 "trade_date": str(row.get("trade_date", "")),
                 "entry_price": entry_price,
-                "dimensions": dimensions,
-                "tracking": tracking
+                "t1_open": t1_open,
+                "t1_close": t1_close,
+                "t1_change_pct": t1_change_pct,
+                "t2_open": t2_open,
+                "t2_close": t2_close,
+                "t2_change_pct": t2_change_pct,
+                "return_pct": return_pct,
             })
+
+        # 5. 分组概览：近20个交易日的B/C/D组统计
+        group_stats = self._build_picks_group_stats(db)
 
         self.send_json({
             "picks": picks,
-            "available_dates": available_dates[:50],  # 最多返回50个日期
+            "available_dates": available_dates[:50],
             "default_date": default_date,
+            "group_stats": group_stats,
         })
+
+    def _get_nth_trade_day_global(self, db, base_date, offset):
+        """获取base_date之后第offset个交易日（offset=1为T+1），全局版本供分组统计使用"""
+        all_dates = db.fetchall(
+            "SELECT DISTINCT trade_date FROM stock_daily WHERE trade_date > %s ORDER BY trade_date ASC LIMIT %s",
+            (base_date, offset + 5)
+        )
+        unique = []
+        for r in all_dates:
+            if r['trade_date'] not in unique:
+                unique.append(r['trade_date'])
+            if len(unique) >= offset:
+                break
+        return unique[offset - 1] if len(unique) >= offset else None
+
+    def _build_picks_group_stats(self, db):
+        """构建近20个交易日的B/C/D分组统计数据
+        收益率公式：(T+2收盘 - T+1开盘) / T+1开盘 × 100%，通过stock_daily表计算
+        分组：B组(60~64)、C组(65~69)、D组(≥70)
+        """
+        today = datetime.now().strftime("%Y%m%d")
+
+        # 取前第2个交易日作为截止日期（确保T+2数据可用）
+        t2_row = db.fetchone('''
+            SELECT DISTINCT trade_date FROM stock_daily
+            WHERE trade_date < %s
+            ORDER BY trade_date DESC LIMIT 1 OFFSET 1
+        ''', (today,))
+        if not t2_row:
+            return []
+        cutoff_t2 = t2_row['trade_date']
+
+        # 取近20个有选股数据的交易日
+        active_dates = db.fetchall('''
+            SELECT DISTINCT trade_date FROM daily_picks
+            WHERE trade_date <= %s AND total_score >= 60
+            ORDER BY trade_date DESC LIMIT 20
+        ''', (cutoff_t2,))
+        active_dates = sorted([r['trade_date'] for r in active_dates])
+
+        if not active_dates:
+            return []
+
+        # 查这些日期内的所有选股记录
+        placeholders = ','.join(['%s'] * len(active_dates))
+        rows = db.fetchall(f'''
+            SELECT trade_date, code, total_score
+            FROM daily_picks
+            WHERE trade_date IN ({placeholders})
+              AND total_score >= 60
+            ORDER BY trade_date DESC, total_score DESC
+        ''', active_dates)
+
+        if not rows:
+            return []
+
+        # 对每条记录，计算收益率 = (T+2收盘 - T+1开盘) / T+1开盘 × 100%
+        groups = {'B': [], 'C': [], 'D': []}
+        for r in rows:
+            s = r['total_score'] or 0
+            code = r['code']
+            base_date = r['trade_date']
+
+            # 查T+1和T+2交易日
+            t1_date = self._get_nth_trade_day_global(db, base_date, 1)
+            t2_date = self._get_nth_trade_day_global(db, base_date, 2)
+
+            if not t1_date or not t2_date:
+                continue
+
+            # 查stock_daily获取t1_open和t2_close
+            t1_row = db.fetchone(
+                "SELECT open FROM stock_daily WHERE code = %s AND trade_date = %s",
+                (code, t1_date)
+            )
+            t2_row = db.fetchone(
+                "SELECT close FROM stock_daily WHERE code = %s AND trade_date = %s",
+                (code, t2_date)
+            )
+
+            if not t1_row or t1_row['open'] is None:
+                continue
+            if not t2_row or t2_row['close'] is None:
+                continue
+
+            t1_open = float(t1_row['open'])
+            t2_close = float(t2_row['close'])
+
+            if t1_open == 0:
+                continue
+
+            return_pct = round((t2_close - t1_open) / t1_open * 100, 2)
+
+            if 60 <= s < 65:
+                groups['B'].append(return_pct)
+            elif 65 <= s < 70:
+                groups['C'].append(return_pct)
+            elif s >= 70:
+                groups['D'].append(return_pct)
+
+        label_map = {
+            'B': 'B组(60~64)',
+            'C': 'C组(65~69)',
+            'D': 'D组(>=70)',
+        }
+        result = []
+        for key in ['B', 'C', 'D']:
+            items = groups[key]
+            if not items:
+                continue
+            cnt = len(items)
+            wins = sum(1 for v in items if v > 0)
+            win_rate = round(wins / cnt * 100, 1)
+            avg_return = round(sum(items) / cnt, 2)
+            max_gain = round(max(items), 2)
+            max_loss = round(min(items), 2)
+            result.append({
+                'label': label_map[key],
+                'count': cnt,
+                'wins': wins,
+                'win_rate': win_rate,
+                'avg_return': avg_return,
+                'max_gain': max_gain,
+                'max_loss': max_loss,
+            })
+
+        return result
+
 
     def api_limit_down(self, params):
         """API: 当日跌停板 — 默认日期走 get_display_date()"""

@@ -699,18 +699,24 @@ class StockDataFetcher:
         raw = date_str or get_display_date()
         raw = str(raw).replace('-', '')
         today = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
-        yesterday_dt = datetime.strptime(today, '%Y-%m-%d') - timedelta(days=1)
-        yesterday = yesterday_dt.strftime('%Y-%m-%d')
+        # 查上一个有成交额数据的交易日（跳过周末和长假）
+        prev_date_cur = db.execute(
+            "SELECT record_date FROM sector_performance WHERE record_date < %s AND rank_type='all' AND amount > 0 ORDER BY record_date DESC LIMIT 1",
+            (today,))
+        prev_date_row = prev_date_cur.fetchone()
+        yesterday = prev_date_row['record_date'] if prev_date_row else None
 
         cur = db.execute(
             "SELECT SUM(rise_count) as rise, SUM(fall_count) as fall, SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
             (today,))
         row = cur.fetchone()
 
-        prev_cur = db.execute(
-            "SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
-            (yesterday,))
-        prev_row = prev_cur.fetchone()
+        prev_row = None
+        if yesterday:
+            prev_cur = db.execute(
+                "SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
+                (yesterday,))
+            prev_row = prev_cur.fetchone()
 
         return {
             'up_count': int(row['rise'] or 0) if row else 0,

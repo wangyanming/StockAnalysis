@@ -808,6 +808,7 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
     t_start = _time.time()
     total_ok = 0
     total_fail = 0
+    fail_codes = []  # 记录本轮全部采集失败的code，供重试使用
     insert_batch = []
 
     for batch_start in range(0, total, batch_size):
@@ -822,6 +823,7 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
                     total_ok += 1
                 else:
                     total_fail += 1
+                    fail_codes.append(code)
                     if total_fail <= 5:
                         logger.warning(f'  {code} 采集失败: {err}')
 
@@ -848,6 +850,53 @@ def daily_quotes_update(max_workers: int = 20, batch_size: int = 200):
         logger.info(f'  已处理 {min(batch_start+batch_size, total)}/{total}  OK:{total_ok} FAIL:{total_fail}  {elapsed:.0f}s {speed:.0f}只/秒')
 
     elapsed_total = _time.time() - t_start
+
+    # ── 失败重试：最多 3 轮，单线程 ──
+    if total_fail > 0:
+        logger.info(f'🔄 开始重试，共{total_fail}只')
+        retry_db = _get_db()
+        try:
+            retry_round = 0
+            while fail_codes and retry_round < 3:
+                retry_round += 1
+                remain = []
+                for code in fail_codes:
+                    result = _fetch_one(code)
+                    c, data, err = result
+                    if data:
+                        try:
+                            retry_db.execute('''REPLACE INTO stock_daily
+                                (code, name, trade_date, open, close, high, low, volume, amount,
+                                 change_pct, turnover_rate, pe_ratio, pb_ratio,
+                                 total_market_cap, circulation_market_cap)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                        %s, %s, %s, %s, %s, %s)''',
+                                (code, data['name'], today, data['open'], data['close'],
+                                 data['high'], data['low'], data['volume'], data['amount'],
+                                 data['change_pct'], data['turnover_rate'], data['pe_ratio'],
+                                 data['pb_ratio'], data['total_market_cap'],
+                                 data['circulation_market_cap']))
+                        except Exception as e:
+                            remain.append(code)
+                            logger.warning(f'  第{retry_round}轮入库失败 {code}: {e}')
+                            continue
+                        total_ok += 1
+                        total_fail -= 1
+                    else:
+                        remain.append(code)
+                        logger.warning(f'  第{retry_round}轮重试失败 {code}: {err}')
+                prev_count = len(fail_codes)
+                fail_codes = remain
+                succ_count = prev_count - len(fail_codes)
+                logger.info(f'第{retry_round}轮重试: 成功{succ_count}只, 失败{len(fail_codes)}只')
+        finally:
+            retry_db.close()
+
+        if not fail_codes:
+            logger.info('✅ 全部重试成功')
+        else:
+            logger.error(f'❌ 重试3轮后仍有{len(fail_codes)}只采集失败: {", ".join(fail_codes)}')
+
     msg_lines = [
         f'{"="*50}',
         f'🏁 腾讯实时行情采集完成',

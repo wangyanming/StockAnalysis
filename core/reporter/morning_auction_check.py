@@ -223,7 +223,7 @@ def run():
 
     # 最近3个有选股记录的交易日（近3日精选）
     cur = db.execute(
-        "SELECT DISTINCT trade_date FROM daily_picks WHERE is_pick=1 ORDER BY trade_date DESC LIMIT 3")
+        "SELECT DISTINCT trade_date FROM daily_picks WHERE total_score>=60 ORDER BY trade_date DESC LIMIT 3")
     date_rows = cur.fetchall()
     cur.close()
     if not date_rows:
@@ -248,7 +248,7 @@ def run():
     for td in trade_dates:
         cur = db.execute(
             'SELECT code, name, total_score, highlights, data_tag, is_pick, `rank`, trade_date '
-            'FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
+            'FROM daily_picks WHERE trade_date=%s AND total_score>=60 ORDER BY `rank`',
             (td,))
         for row in cur.fetchall():
             code = row['code'].strip()
@@ -260,12 +260,12 @@ def run():
         cur.close()
 
     if not all_picks:
-        lines.append('⚠️ 近3日无精选股数据')
+        lines.append('⚠️ 近3日无≥60分的股票数据')
         lines.append('')
         print('\n'.join(lines))
         return
 
-    lines.append(f'**📋 近3日精选监控（{len(trade_dates)}个交易日，{len(all_picks)}只，去重）：**')
+    lines.append(f'**📋 近3日≥60分监控（{len(trade_dates)}个交易日，{len(all_picks)}只，去重）：**')
     date_str_parts = []
     for td in trade_dates:
         date_str_parts.append(f'{date_labels[td]}({td[-2:]}日)')

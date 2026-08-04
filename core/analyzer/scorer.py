@@ -1,5 +1,5 @@
 """
-短线选股评分器 v5 — 判断"明天上涨概率"，而不是给"今天表现"打分
+短线选股评分器 v6.0 — 判断"明天上涨概率"，而不是给"今天表现"打分
 
 核心哲学：
   - 今天涨得多 ≠ 明天继续涨；今天涨停 ≠ 明天能连板；好公司 ≠ 短线好标的
@@ -494,7 +494,7 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     """
     趋势位置评分（20分）
 
-    v5.2 改写：先判大方向（硬开关），再给细分评分。
+    v6.0 改写：先判大方向（硬开关），再给细分评分。
 
     阶段一：大方向判断（一票否决制）
     - 下跌趋势特征：价格在MA20下方 + MA20方向向下
@@ -846,7 +846,7 @@ def _score_position_in_range(code: str, q: dict) -> int:
 
 def score_candidate(code: str, name: str) -> Dict:
     """
-    综合评分（v5.4新版，预测型）
+    综合评分（v6.0新版，预测型）
 
     评分结构（满分115→上限100）：
     - 筹码结构  25分（低位/放量/沉淀）
@@ -994,5 +994,5 @@ def format_score_report(reports: list, title: str = '') -> str:
 
 
 if __name__ == '__main__':
-    print("=== 评分器 v5 测试 ===")
+    print("=== 评分器 v6.0 测试 ===")
     print(check_market_status())

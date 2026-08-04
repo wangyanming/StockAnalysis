@@ -52,6 +52,7 @@ def pick_stocks_v2():
 
     # 2. 涨停数据分析
     logger.info("2. 涨停板分析...")
+    today_up = None
     try:
         today_up = zt.get_today_limit_up()
         if today_up:

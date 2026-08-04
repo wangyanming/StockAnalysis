@@ -112,6 +112,44 @@ class LimitUpAnalyzer:
     def __init__(self):
         init_zt_tables()
 
+    def _fetch_limit_up_from_db(self, trade_date: str) -> pd.DataFrame:
+        """回测模式：从 daily_limit_up 历史表读取指定交易日涨停明细（纯查库，零网络）。
+
+        返回 DataFrame，列名与 fetch_today_limit_up 网络结果对齐，便于下游 save/消费。
+        查不到该交易日数据时返回空 DataFrame。
+        """
+        try:
+            db = _get_db()
+            rows = db.fetchall(
+                "SELECT * FROM daily_limit_up WHERE trade_date=%s "
+                "ORDER BY board_times DESC, seal_first_time ASC",
+                (trade_date,))
+        except Exception as e:
+            logger.warning(f"[回测查库] 读 daily_limit_up({trade_date}) 失败: {e}")
+            return pd.DataFrame()
+
+        if not rows:
+            return pd.DataFrame()
+
+        data = []
+        for r in rows:
+            data.append({
+                '代码': r.get('code') or '',
+                '名称': r.get('name') or '',
+                '最新价': r.get('price') or 0,
+                '涨跌幅': r.get('change_pct') or 0,
+                '涨停统计': str(r.get('board_times') or 1) + '板',
+                '连板数': r.get('board_times') or 1,
+                '换手率': r.get('turnover_rate') or 0,
+                '封板资金': r.get('seal_fund') or 0,
+                '首次封板时间': r.get('seal_first_time') or '',
+                '最后封板时间': r.get('seal_last_time') or '',
+                '所属行业': r.get('industry') or '',
+                '炸板次数': r.get('bomb_times') or 0,
+            })
+        logger.info(f"[回测查库] {trade_date} 从 daily_limit_up 读到 {len(data)} 只涨停")
+        return pd.DataFrame(data)
+
     def fetch_today_limit_up(self, trade_date: str = None) -> pd.DataFrame:
         """获取今日涨停板（含数据日期校验）"""
         if not HAS_AK:
@@ -120,6 +158,15 @@ class LimitUpAnalyzer:
 
         if not trade_date:
             trade_date = datetime.now().strftime("%Y%m%d")
+
+        # 回测查库优先分支（env BT_LIMIT_UP_FROM_DB=1 时开启）：
+        # 指定交易日能查到历史涨停明细则直接读库，零联网；查不到才走网络。
+        # 生产不设置该变量，保持原有联网实时获取逻辑不变。
+        if os.environ.get('BT_LIMIT_UP_FROM_DB') == '1':
+            df = self._fetch_limit_up_from_db(trade_date)
+            if not df.empty:
+                return df
+            logger.warning(f"[回测查库] {trade_date} 无历史涨停数据，回退网络获取")
 
         # 重试参数：交易时段最多3次（偶发空数据则重试，如收盘后东财短暂清缓存）
         max_retries = 3

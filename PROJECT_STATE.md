@@ -8,7 +8,7 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
-## 当前阶段：统一展示日期规则（已完成）
+## 当前阶段：选股追踪页面改版（已完成）
 
 ### 已发现问题
 - **不同接口
@@ -59,6 +59,10 @@
 | `utils/date_utils.py` | **新增** `get_display_date()` + `_is_trade_date()` | ✅ 2026-07-16 |
 | `web_server.py` | 6 个 API 日期逻辑统一改为 `get_display_date()` | ✅ 2026-07-16 |
 | `utils/stock_analysis_api.py` | `get_market_summary()` 内部日期改用 `get_display_date()` | ✅ 2026-07-16 |
+| `web_server.py` | `_build_picks_group_stats` 修复：收益率改为通过stock_daily的T+1/T+2数据计算，替代next_day_change字段 | ✅ 2026-07-28 |
+| `web_server.py` | **新增** `_get_nth_trade_day_global` 方法，供分组统计使用 | ✅ 2026-07-28 |
+| `docs/design/web_app.html` | 前端HTML/JS确认已无筛选控件，分组概览区块正常显示，表头11列 | ✅ 2026-07-28 |
+| `core/analyzer/close_task.py` | **新增** `_render_group_stats_table` + `_push_group_stats_image` 生成分组统计表格图片并推飞书 | ✅ 2026-07-28 |
 
 ## 已改文件 (2026-06-02)
 
@@ -578,3 +582,49 @@
 - 接口偶发SSL超时（`Max retries exceeded`），卡住1-2分钟，叠加cron 600s超时，导致任务被杀死
 - 风险扣分仅-5~-15分，年报数据对短线选股价值低
 
+
+## 最新变更：飞书推送 ReAct 复盘换行修复（2026-07-28）
+- **文件修改**: `core/analyzer/close_task.py`
+- **变更内容**: `daily_close_task()` 末尾 print(report) 前增加换行转换逻辑
+  - `\n\n\n` → `\n\n`（缩减多余空行）
+  - `\n\n` → `\n\n\n`（单换行变双换行，防飞书吞换行）
+  - 只改 print 输出前处理，不改 render_report 逻辑
+- **原因**: 飞书纯文本 command 模式推送合并连续换行，ReAct 复盘段 lose 了换行格式
+- **验证**: check_engineering.sh ✅, 语法检查 ✅, import 检查 ✅
+
+## 最新变更：v6评分因子（维度）剔除回测（正确版）（2026-07-31）
+
+- **场景**: 纠正昨晚 `backtest/backtest_v6copy.py`（未跟踪）的假回测（8轮结果全一样，因每笔重跑完整选股+新浪fallback）
+- **新增**: `backtest/backtest_v6_ablation.py` — 直接读 daily_picks 已存评分 + stock_daily 开盘价，维度级剔除回测
+- **需求/方案**: `docs/requirements/REQ-20260731-01-v6评分因子剔除回测.md` + `docs/design/DES-20260731-01-v6评分因子剔除回测.md`
+
+### 关键数据语义核查结论（重要）
+- `daily_picks` 数据由 **v4 评分体系**（6 大维度）写入，**非** `scorer_v6_copy.py`（v6只含SKIP子因子开关，从未批量落库）
+- **有效维度列仅 6 个**: score_chip/money/sector/trend/market/pos；`score_pop/tech/mkt/logic` 全 0，无法用于剔除
+- 主人给出的 7 子因子（chip_deposit 等）是 v6 维度内子项，已存整维度列无法精确还原 → 本项目改为**维度级剔除**（减掉整个维度列分），仅 market_safety→score_market、position→score_pos 为精确
+- 已存 `total_score`（mean 32.9, max 78）≠ 6维列和（mean 26.1），有 +5/+8/+10 固定偏差
+- **A/B/C/D 绝对档位退化**: 99.8% 落 A区(<60)，档位统计无区分意义 → 因子判定改用**相对五分位区分度(Q5-Q1)**为主依据
+
+### 回测结论（20260428~20260730，样本21481，全程只查库无网络，耗时约1.5s）
+| 轮次 | 区分收益pct (Q5-Q1) | Δvs基准 | 判定 |
+|------|------|------|------|
+| 基准 | +0.211 | — | — |
+| 剔除_筹码结构 | -0.084 | +0.295 | 弱效（略变差，保留低权重） |
+| 剔除_资金接力 | +0.757 | -0.546 | **无效（剔除后变好→可删）** |
+| 剔除_板块环境 | +0.198 | +0.013 | 中性（板块分几乎全=5，无区分） |
+| 剔除_趋势位置 | +0.317 | -0.106 | 中性偏无效 |
+| 剔除_大盘安全垫 | +0.194 | +0.017 | 中性（大盘分几乎全=7，无区分） |
+| 剔除_位置评估 | -0.304 | +0.515 | **有效（剔除后区分度消失→保留）** |
+- **最有效**: 位置评估（剔除后区分度翻负，唯一真正驱动排序预测力）
+- **疑似无效可删**: 资金接力
+- **近乎常量的无区分维**: 板块环境(几乎全5)、大盘安全垫(几乎全7)
+
+## 最新变更：集合竞价检查筛选条件调整（2026-07-28）
+- **文件修改**: `core/reporter/morning_auction_check.py`
+- **变更内容**: 将筛选条件从 `is_pick=1`（精选）调整为 `total_score>=60`（≥60分），涉及4处修改
+  - 第一条SQL：`is_pick=1` → `total_score>=60`
+  - 第二条SQL：`AND is_pick=1` → `AND total_score>=60`
+  - 无数据提示：`近3日无精选股数据` → `近3日无≥60分的股票数据`
+  - 监控标题：`近3日精选监控` → `近3日≥60分监控`
+- **原因**: 统一使用分数阈值筛选，与评分体系对齐
+- **验证**: Preflight 全部通过

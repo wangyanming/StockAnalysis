@@ -36,8 +36,8 @@ _DEFAULT_MYSQL_URL = "mysql://root:stock123@127.0.0.1:3306/stock_analysis"
 DB_URL = os.environ.get("STOCK_DB_URL", _DEFAULT_MYSQL_URL)
 
 # 连接池参数
-_POOL_MAXCONNECTIONS = 10  # 最大连接数
-_POOL_MINCACHED = 2        # 最小缓存连接数
+_POOL_MAXCONNECTIONS = 5  # 最大连接数
+_POOL_MINCACHED = 1        # 最小缓存连接数
 _POOL_BLOCKING = True      # 无可用连接时阻塞等待
 _POOL_MAXUSAGE = 1000      # 单连接复用上限，达到后自动重建
 _POOL_CHARSET = "utf8mb4"  # 字符集
@@ -48,21 +48,26 @@ _POOL_CHARSET = "utf8mb4"  # 字符集
 # ─────────────────────────────────────────────
 
 def parse_mysql_url(url: str) -> dict:
-    """解析 mysql://user:pass@host:port/dbname"""
+    """解析 mysql://user:pass@host:port/dbname 或 unix:// 模式"""
+    cfg = {}
     m = re.match(r'mysql://(.+?):(.+?)@(.+?):(\d+)/(.+)', url)
     if not m:
         m = re.match(r'mysql://(.+?):(.+?)@(.+?)/(.+)', url)
         if m:
-            return {'user': m.group(1), 'password': m.group(2),
-                    'host': m.group(3), 'port': 3306, 'database': m.group(4)}
-        raise ValueError(f"无法解析 MySQL URL: {url}")
-    return {
-        'user': m.group(1),
-        'password': m.group(2),
-        'host': m.group(3),
-        'port': int(m.group(4)),
-        'database': m.group(5),
-    }
+            cfg = {'user': m.group(1), 'password': m.group(2),
+                   'host': m.group(3), 'port': 3306, 'database': m.group(4)}
+        else:
+            raise ValueError(f"无法解析 MySQL URL: {url}")
+    else:
+        cfg = {'user': m.group(1), 'password': m.group(2),
+               'host': m.group(3), 'port': int(m.group(4)),
+               'database': m.group(5)}
+    # 环境变量 STOCK_DB_UNIX=1 启用 Unix Socket
+    if os.environ.get('STOCK_DB_UNIX') == '1':
+        cfg['unix_socket'] = '/tmp/mysql.sock'
+        cfg.pop('host', None)
+        cfg.pop('port', None)
+    return cfg
 
 
 # ─────────────────────────────────────────────
@@ -77,7 +82,7 @@ class DB:
         self._pool: Optional[PooledDB] = None
         self._init_pool()
         logger.info(
-            f"🔗 连接池已初始化: {self._mysql_cfg['host']}:{self._mysql_cfg['port']}/"
+            f"🔗 连接池已初始化: {self._mysql_cfg.get('unix_socket', self._mysql_cfg.get('host','?')+':'+str(self._mysql_cfg.get('port','?')))}/"
             f"{self._mysql_cfg['database']} "
             f"(max={_POOL_MAXCONNECTIONS}, min={_POOL_MINCACHED})"
         )
@@ -93,8 +98,9 @@ class DB:
             maxusage=_POOL_MAXUSAGE,
             ping=1,  # 从池取出时 ping 检查连接健康
             # 以下为 pymysql.connect 参数（通过 kwargs 透传）
-            host=self._mysql_cfg['host'],
-            port=self._mysql_cfg['port'],
+            host=self._mysql_cfg.get('host', 'localhost') if not self._mysql_cfg.get('unix_socket') else None,
+            port=self._mysql_cfg.get('port', 3306) if not self._mysql_cfg.get('unix_socket') else None,
+            unix_socket=self._mysql_cfg.get('unix_socket'),
             user=self._mysql_cfg['user'],
             password=self._mysql_cfg['password'],
             database=self._mysql_cfg['database'],

@@ -487,11 +487,11 @@ def _last_5_dates(db, check_date: str) -> list:
 
 # 维度区间分段配置
 DIM_SEGMENTS = [
-    ('score_chip', '筹码结构', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (0, 4, '低分(<5)')]),
-    ('score_money', '资金接力', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (0, 4, '低分(<5)')]),
-    ('score_sector', '板块环境', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (0, 3, '低分(<4)')]),
-    ('score_trend', '趋势位置', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (0, 3, '低分(<4)')]),
-    ('score_market', '大盘安全', 10, [(6, 10, '高分(≥6)'), (2, 5, '中分(2~5)'), (0, 1, '低分(<2)')]),
+    ('score_chip', '筹码结构', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (None, 4, '低分(<5)')]),
+    ('score_money', '资金接力', 25, [(15, 25, '高分(≥15)'), (5, 14, '中分(5~14)'), (None, 4, '低分(<5)')]),
+    ('score_sector', '板块环境', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (None, 3, '低分(<4)')]),
+    ('score_trend', '趋势位置', 20, [(12, 20, '高分(≥12)'), (4, 11, '中分(4~11)'), (None, 3, '低分(<4)')]),
+    ('score_market', '大盘安全', 10, [(6, 10, '高分(≥6)'), (2, 5, '中分(2~5)'), (None, 1, '低分(<2)')]),
 ]
 
 
@@ -538,7 +538,7 @@ def _build_dimension_analysis(rows: list) -> list:
     for db_field, dim_label, full_score, segments in DIM_SEGMENTS:
         seg_data = []
         for lo, hi, label in segments:
-            matched = [r for r in rows if r.get(db_field) is not None and lo <= r[db_field] <= hi]
+            matched = [r for r in rows if r.get(db_field) is not None and (lo is None or lo <= r[db_field]) and r[db_field] <= hi]
             cnt = len(matched)
             if cnt == 0:
                 seg_data.append({'label': label, 'count': 0, 'win_rate': 0, 'avg_return': 0})

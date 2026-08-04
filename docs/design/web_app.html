@@ -322,18 +322,14 @@ th.sortable:hover { color: var(--primary); }
   <div id="module-picks" class="module">
 
     <div class="card">
-      <div class="filter-bar">
+            <div class="filter-bar">
         <label>📅 日期</label>
         <select id="pk-date"></select>
-        <label>📁 维度</label>
-        <select id="pk-tag">
-          <option value="all">全部</option>
-          <option value="limitup">涨停接力</option>
-          <option value="range">区间潜伏</option>
-        </select>
         <button onclick="loadPicks()">查询</button>
       </div>
     </div>
+
+    <div id="pk-group-stats" style="display:none"></div>
 
     <div id="pk-body">
       <div class="loading"><span class="spinner"></span>加载中...</div>
@@ -688,6 +684,7 @@ function sortLU(prefix, field) {
 }
 
 // ============================================================
+// ============================================================
 // 选股追踪
 // ============================================================
 let _pkCache = [];
@@ -695,61 +692,70 @@ const PK_STATE = { page: 1, pageSize: 10, sortField: null, sortAsc: false };
 
 async function loadPicksDates() {
   try {
-    const d = await fetchJSON(api('/api/picks?date=&tag=all'));
+    const d = await fetchJSON(api('/api/picks?date='));
     const dates = d.available_dates || [];
     const defaultDate = d.default_date || (dates[0] || '');
     const sel = document.getElementById('pk-date');
     sel.innerHTML = dates.map(dd => `<option value="${dd}"${dd === defaultDate ? ' selected' : ''}>${dd.slice(0,4)}-${dd.slice(4,6)}-${dd.slice(6)}</option>`).join('');
     if (dates.length) loadPicks();
   } catch(e) {
-    document.getElementById('pk-body').innerHTML = `<div class="error-msg">❌ 日期加载失败: ${e.message}</div>`;
+    document.getElementById('pk-body').innerHTML = `错误: 日期加载失败 - ${e.message}`;
   }
 }
 
 async function loadPicks() {
   const date = document.getElementById('pk-date').value;
-  const tag = document.getElementById('pk-tag').value;
   if (!date) return;
   const el = document.getElementById('pk-body');
   document.getElementById('pk-pagination').style.display = 'none';
   el.innerHTML = '<div class="loading"><span class="spinner"></span>加载中...</div>';
   try {
-    const d = await fetchJSON(api(`/api/picks?date=${date}&tag=${tag}`));
+    const d = await fetchJSON(api('/api/picks?date=' + date));
     const picks = d.picks || [];
     if (!picks.length) { el.innerHTML = '<div class="loading">当日无选股数据</div>'; return; }
     _pkCache = picks;
     PK_STATE.page = 1;
-    if (PK_STATE.sortField) {
-      _pkCache = _sortPicks(_pkCache);
-    }
     renderPicksTable();
+    renderGroupStats(d.group_stats || []);
   } catch(e) {
-    el.innerHTML = `<div class="error-msg">❌ 选股数据加载失败: ${e.message}</div>`;
+    el.innerHTML = `错误: 选股数据加载失败 - ${e.message}`;
   }
 }
 
-function _sortPicks(data) {
-  const f = PK_STATE.sortField;
-  if (!f) return data;
-  const asc = PK_STATE.sortAsc;
-  return [...data].sort((a, b) => {
-    let va = a[f], vb = b[f];
-    if (f === 'trade_date') {
-      va = parseInt(va || '0', 10);
-      vb = parseInt(vb || '0', 10);
-    } else if (f === 'total_score') {
-      va = parseFloat(va) || 0;
-      vb = parseFloat(vb) || 0;
-    } else if (f === 'entry_price') {
-      va = parseFloat(va) || 0;
-      vb = parseFloat(vb) || 0;
-    } else if (f.startsWith('t') && f.length === 2) {
-      const idx = parseInt(f[1], 10) - 1;
-      va = parseFloat(a.tracking?.[idx]?.change_pct) || 0;
-      vb = parseFloat(b.tracking?.[idx]?.change_pct) || 0;
-    }
-    return asc ? va - vb : vb - va;
-  });
+function fmtPctSpan(v) {
+  if (v == null) return '<span style="color:#999">-</span>';
+  const cls = v > 0 ? 'up' : 'down';
+  const prefix = v > 0 ? '+' : '';
+  return '<span class="' + cls + '">' + prefix + v.toFixed(2) + '%</span>';
+}
+
+function renderGroupStats(stats) {
+  const el = document.getElementById('pk-group-stats');
+  if (!stats || !stats.length) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  var html = '<div class="card">';
+  html += '<div class="card-title">近20日分组概览</div>';
+  html += '<div class="card-body" style="overflow-x:auto">';
+  html += '<table><tr><th>分组</th><th>笔数</th><th>盈利笔数</th><th>胜率</th><th>平均收益率</th><th>最大收益</th><th>最大亏损</th></tr>';
+  for (var i = 0; i < stats.length; i++) {
+    var g = stats[i];
+    var avgCls = g.avg_return > 0 ? 'up' : 'down';
+    var avgPrefix = g.avg_return > 0 ? '+' : '';
+    html += '<tr>';
+    html += '<td style="font-weight:600">' + g.label + '</td>';
+    html += '<td>' + g.count + '</td>';
+    html += '<td>' + g.wins + '</td>';
+    html += '<td>' + g.win_rate + '%</td>';
+    html += '<td class="' + avgCls + '">' + avgPrefix + g.avg_return.toFixed(2) + '%</td>';
+    html += '<td class="up">+' + g.max_gain.toFixed(2) + '%</td>';
+    html += '<td class="down">' + g.max_loss.toFixed(2) + '%</td>';
+    html += '</tr>';
+  }
+  html += '</table></div></div>';
+  el.innerHTML = html;
 }
 
 function renderPicksTable() {
@@ -762,91 +768,65 @@ function renderPicksTable() {
   const start = (PK_STATE.page - 1) * PK_STATE.pageSize;
   const pageData = picks.slice(start, start + PK_STATE.pageSize);
 
-  // 维度中文映射
-  function dimLabel(tag) {
-    if (tag === 'limitup' || tag === '涨停接力') return '涨停接力';
-    if (tag === 'range' || tag === '区间潜伏') return '区间潜伏';
-    return tag || '';
+  html = '<div class="card">';
+  html += '<div class="card-body" style="overflow-x:auto">';
+  html += '<table><tr>';
+  var headers = ['代码','名称','入选日','入选价','T+1开盘','T+1收盘','T+1涨跌幅','T+2开盘','T+2收盘','T+2涨跌幅','收益率'];
+  for (var i = 0; i < headers.length; i++) {
+    html += '<th>' + headers[i] + '</th>';
   }
+  html += '</tr>';
 
-  // T+N 涨跌幅渲染
-  function fmtTrack(changePct) {
-    if (changePct == null) return '<span style="color:#ccc">—</span>';
-    const v = changePct;
-    const cls = v > 0 ? 'up' : 'down';
-    const prefix = v > 0 ? '+' : '';
-    return `<span class="${cls}">${prefix}${v.toFixed(2)}%</span>`;
+  for (var i = 0; i < pageData.length; i++) {
+    var p = pageData[i];
+    var td = p.trade_date || '';
+    var tradeDate = td.length === 8 ? td.slice(0,4) + '-' + td.slice(4,6) + '-' + td.slice(6,8) : td;
+    html += '<tr>';
+    html += '<td>' + (p.code || '') + '</td>';
+    html += '<td style="font-weight:600">' + (p.name || '') + '</td>';
+    html += '<td>' + tradeDate + '</td>';
+    html += '<td>' + (p.entry_price != null ? p.entry_price.toFixed(2) : '-') + '</td>';
+    html += '<td>' + (p.t1_open != null ? p.t1_open.toFixed(2) : '-') + '</td>';
+    html += '<td>' + (p.t1_close != null ? p.t1_close.toFixed(2) : '-') + '</td>';
+    html += '<td>' + fmtPctSpan(p.t1_change_pct) + '</td>';
+    html += '<td>' + (p.t2_open != null ? p.t2_open.toFixed(2) : '-') + '</td>';
+    html += '<td>' + (p.t2_close != null ? p.t2_close.toFixed(2) : '-') + '</td>';
+    html += '<td>' + fmtPctSpan(p.t2_change_pct) + '</td>';
+    html += '<td style="font-weight:700">' + fmtPctSpan(p.return_pct) + '</td>';
+    html += '</tr>';
   }
-
-  el.innerHTML = `<div class="card">
-    <div class="card-body" style="overflow-x:auto">
-      <table>
-        <tr>${['代码','名称','维度','入选日','评分','入选价','T+1','T+2','T+3','T+4','T+5'].map((label,i) => {
-          const fields = ['code','name','data_tag','trade_date','total_score','entry_price','t1','t2','t3','t4','t5'];
-          const f = fields[i];
-          const isSortable = ['trade_date','total_score','entry_price','t1','t2','t3','t4','t5'].includes(f);
-          const isActive = PK_STATE.sortField === f;
-          const arrow = isActive ? (PK_STATE.sortAsc ? ' ↑' : ' ↓') : '';
-          if (!isSortable) return `<th>${label}</th>`;
-          return `<th onclick="pkSortPicks('${f}')" data-field="${f}" style="cursor:pointer;user-select:none">${label}${arrow}</th>`;
-        }).join('')}</tr>
-        ${pageData.map(p => {
-          const tracking = p.tracking || [];
-          return `<tr>
-            <td>${p.code}</td>
-            <td style="font-weight:600">${p.name || ''}</td>
-            <td>${dimLabel(p.data_tag)}</td>
-            <td>${(p.trade_date||'').slice(0,4)+'-'+(p.trade_date||'').slice(4,6)+'-'+(p.trade_date||'').slice(6,8)}</td>
-            <td style="font-weight:600">${p.total_score}</td>
-            <td>${p.entry_price ? p.entry_price.toFixed(2) : '--'}</td>
-            ${[0,1,2,3,4].map(i => `<td>${fmtTrack(tracking[i] ? tracking[i].change_pct : null)}</td>`).join('')}
-          </tr>`;
-        }).join('')}
-      </table>
-    </div>
-  </div>`;
+  html += '</table></div></div>';
+  el.innerHTML = html;
 
   // 分页控件
   const pagEl = document.getElementById('pk-pagination');
   pagEl.style.display = 'flex';
-  pagEl.innerHTML = `<span>共 ${total} 条，第 ${PK_STATE.page}/${totalPages} 页</span>
-    <div class="page-btns">
-      <button ${PK_STATE.page <= 1 ? 'disabled' : ''} onclick="pkGoPage(1)">首页</button>
-      <button ${PK_STATE.page <= 1 ? 'disabled' : ''} onclick="pkGoPage(${PK_STATE.page - 1})">‹</button>
-      ${pkRenderPageBtns(PK_STATE.page, totalPages)}
-      <button ${PK_STATE.page >= totalPages ? 'disabled' : ''} onclick="pkGoPage(${PK_STATE.page + 1})">›</button>
-      <button ${PK_STATE.page >= totalPages ? 'disabled' : ''} onclick="pkGoPage(${totalPages})">末页</button>
-    </div>
-    <div class="page-size">
-      每页 <select onchange="pkChangePageSize(this.value)">
-        <option value="10" ${PK_STATE.pageSize == 10 ? 'selected' : ''}>10</option>
-        <option value="20" ${PK_STATE.pageSize == 20 ? 'selected' : ''}>20</option>
-        <option value="50" ${PK_STATE.pageSize == 50 ? 'selected' : ''}>50</option>
-        <option value="100" ${PK_STATE.pageSize == 100 ? 'selected' : ''}>100</option>
-      </select> 条
-    </div>`;
+  var pagHtml = '共 ' + total + ' 条，第 ' + PK_STATE.page + '/' + totalPages + ' 页';
+  pagHtml += '<div class="page-btns">';
+  pagHtml += '<button ' + (PK_STATE.page <= 1 ? 'disabled' : '') + ' onclick="pkGoPage(1)">首页</button>';
+  pagHtml += '<button ' + (PK_STATE.page <= 1 ? 'disabled' : '') + ' onclick="pkGoPage(' + (PK_STATE.page - 1) + ')">‹</button>';
+  pagHtml += pkRenderPageBtns(PK_STATE.page, totalPages);
+  pagHtml += '<button ' + (PK_STATE.page >= totalPages ? 'disabled' : '') + ' onclick="pkGoPage(' + (PK_STATE.page + 1) + ')">›</button>';
+  pagHtml += '<button ' + (PK_STATE.page >= totalPages ? 'disabled' : '') + ' onclick="pkGoPage(' + totalPages + ')">末页</button>';
+  pagHtml += '</div>';
+  pagHtml += '<div class="page-size">每页 <select onchange="pkChangePageSize(this.value)">';
+  var sizes = [10, 20, 50, 100];
+  for (var si = 0; si < sizes.length; si++) {
+    var s = sizes[si];
+    pagHtml += '<option value="' + s + '"' + (PK_STATE.pageSize == s ? ' selected' : '') + '>' + s + '</option>';
+  }
+  pagHtml += '</select> 条</div>';
+  pagEl.innerHTML = pagHtml;
 }
 
 function pkRenderPageBtns(current, total) {
-  let btns = '';
-  const start = Math.max(1, current - 2);
-  const end = Math.min(total, current + 2);
-  for (let i = start; i <= end; i++) {
-    btns += `<button class="${i === current ? 'active' : ''}" onclick="pkGoPage(${i})">${i}</button>`;
+  var btns = '';
+  var start = Math.max(1, current - 2);
+  var end = Math.min(total, current + 2);
+  for (var i = start; i <= end; i++) {
+    btns += '<button class="' + (i === current ? 'active' : '') + '" onclick="pkGoPage(' + i + ')">' + i + '</button>';
   }
   return btns;
-}
-
-function pkSortPicks(field) {
-  if (PK_STATE.sortField === field) {
-    PK_STATE.sortAsc = !PK_STATE.sortAsc;
-  } else {
-    PK_STATE.sortField = field;
-    PK_STATE.sortAsc = false;
-  }
-  PK_STATE.page = 1;
-  _pkCache = _sortPicks(_pkCache);
-  renderPicksTable();
 }
 
 function pkGoPage(page) {

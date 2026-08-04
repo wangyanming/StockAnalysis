@@ -180,17 +180,13 @@ def _load_index_quotes(trade_date: str) -> dict:
 
 
 def _load_yesterday_total_amount(trade_date: str) -> float:
-    """查询昨日成交额（从 sector_performance 取）"""
-    td = datetime.strptime(trade_date, '%Y%m%d')
-    for i in range(1, 8):
-        prev = td - timedelta(days=i)
-        prev_str = prev.strftime('%Y%m%d')
-        dash = f"{prev_str[:4]}-{prev_str[4:6]}-{prev_str[6:8]}"
-        row = _db.fetchone(
-            "SELECT SUM(amount) as amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
-            (dash,))
-        if row and row['amt'] and row['amt'] > 0:
-            return float(row['amt'])
+    """查询昨日成交额（从 sector_performance 取，跳过周末和长假）"""
+    today_dash = f"{trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]}"
+    row = _db.fetchone(
+        "SELECT SUM(amount) as amt FROM sector_performance WHERE record_date=(SELECT MAX(record_date) FROM sector_performance WHERE record_date < %s AND rank_type='all' AND amount > 0) AND rank_type='all'",
+        (today_dash,))
+    if row and row['amt'] and row['amt'] > 0:
+        return float(row['amt'])
     return 0
 
 
@@ -514,23 +510,58 @@ def _build_position_data(trade_date: str) -> list:
             'SELECT close, change_pct, amount, turnover_rate FROM stock_daily '
             'WHERE code=%s AND trade_date=%s', (code, trade_date))
         
+        # 始终完整初始化的 entry，保证渲染层不会因缺键崩溃
         entry = {
             'name': name,
             'code': code,
             'cost_price': cost_price,
             'shares': shares,
             'cost_total': cost_total,
+            # 以下经济指标默认值，后续根据数据覆盖；极端兜底时 close 用 cost_price
+            'close': cost_price,       # 现价（元）
+            'cur_total': cost_total,   # 当前市值（元）
+            'pnl_pct': 0.0,            # 盈亏百分比（%）
+            'pnl_sym': '⚠️',  # 盈亏符号
+            'profit_flag': None,       # 触发信号：stop/near_stop/take_profit/None
+            'amount_yi': None,         # 当日成交额（亿元）
+            'turnover': None,          # 当日换手率（%）
         }
         
-        if today_data and today_data['close']:
-            close = float(today_data['close'])
-            pnl_pct = (close - cost_price) / cost_price * 100
+        # 默认使用今日行情：若今日无数据（时序竞态：采集与复盘并行），则兜底到最近交易日
+        used_data = today_data
+        used_trade_date = trade_date
+        
+        if not (today_data and today_data['close']):
+            # 时序竞态兜底：今日查不到（采集尚未写入），改用最近一个交易日收盘价
+            prev_data = _db.fetchone(
+                'SELECT close, amount, turnover_rate FROM stock_daily '
+                'WHERE code=%s AND trade_date<%s ORDER BY trade_date DESC LIMIT 1',
+                (code, trade_date))
+            
+            if prev_data and prev_data['close']:
+                used_data = prev_data
+                used_trade_date = _db.fetchone(
+                    'SELECT MAX(trade_date) AS d FROM stock_daily WHERE code=%s AND trade_date<%s',
+                    (code, trade_date))
+                used_trade_date = used_trade_date['d'] if used_trade_date else None
+                logger.warning(
+                    '持仓%s今日(%s)无数据, 用最近交易日%s收盘价兜底',
+                    code, trade_date, used_trade_date)
+            else:
+                # 极端情况：连最近交易日都没有，用成本价兜底，绝不抛异常
+                logger.error(
+                    '持仓%s今日(%s)及最近交易日均无数据, 用成本价%.2f兜底, 盈亏计0',
+                    code, trade_date, cost_price)
+        
+        if used_data and used_data['close']:
+            close = float(used_data['close'])
+            pnl_pct = (close - cost_price) / cost_price * 100 if cost_price else 0.0
             entry['close'] = close
             entry['cur_total'] = close * shares
             entry['pnl_pct'] = pnl_pct
             entry['pnl_sym'] = '✅' if pnl_pct > 0 else ('❌' if pnl_pct < -2 else '⚠️')
-            entry['amount_yi'] = float(today_data['amount']) / 1e8 if today_data['amount'] else None
-            entry['turnover'] = float(today_data['turnover_rate']) if today_data['turnover_rate'] else None
+            entry['amount_yi'] = float(used_data['amount']) / 1e8 if used_data.get('amount') else None
+            entry['turnover'] = float(used_data['turnover_rate']) if used_data.get('turnover_rate') else None
             
             if pnl_pct <= -5:
                 entry['profit_flag'] = 'stop'
@@ -544,6 +575,143 @@ def _build_position_data(trade_date: str) -> list:
         result.append(entry)
     
     return result
+
+
+def _render_group_stats_table(groups: dict) -> str:
+    """生成分组统计表格图片，返回图片文件路径"""
+    from PIL import Image, ImageDraw, ImageFont
+
+    headers = ["分组条件", "个股数量", "盈利数量", "胜率", "平均收益率"]
+    rows = []
+
+    for label, members in groups.items():
+        if members:
+            cnt = len(members)
+            wins = sum(1 for p in members if p['change_pct'] > 0)
+            wr = round(wins / cnt * 100, 1) if cnt > 0 else 0
+            avg = sum(p['change_pct'] for p in members) / cnt
+            rows.append([label, str(cnt), str(wins), f"{wr}%", f"{avg:+.2f}%"])
+        else:
+            rows.append([label, "0", "0", "0%", "0%"])
+
+    # 字体
+    font_path = '/System/Library/Fonts/STHeiti Medium.ttc'
+    font = ImageFont.truetype(font_path, 14)
+    bold_font = ImageFont.truetype(font_path, 14)
+
+    col_widths = [180, 100, 100, 80, 120]
+    row_height = 36
+    header_h = 40
+    padding = 10
+
+    total_w = sum(col_widths) + padding * (len(col_widths) + 1)
+    total_h = header_h + row_height * len(rows) + padding * 2 + 40  # +40 标题留空
+
+    img = Image.new('RGB', (total_w, total_h), 'white')
+    draw = ImageDraw.Draw(img)
+
+    # 标题
+    draw.text((padding + 4, 8), "📊 分组统计", fill='#333', font=font)
+
+    y = 40 + padding
+    x_start = padding
+
+    # 表头背景
+    draw.rectangle([0, y, total_w, y + header_h], fill='#4a90d9')
+    x = x_start
+    for i, h in enumerate(headers):
+        tw = draw.textlength(h, font=bold_font)
+        draw.text((x + (col_widths[i] - tw) / 2, y + 8), h, fill='white', font=bold_font)
+        x += col_widths[i]
+    y += header_h
+
+    # 数据行
+    for ri, row in enumerate(rows):
+        x = x_start
+        bg = '#f5f7fa' if ri % 2 == 0 else 'white'
+        draw.rectangle([0, y, total_w, y + row_height], fill=bg)
+        for ci, val in enumerate(row):
+            draw.rectangle([x, y, x + col_widths[ci], y + row_height], outline='#e0e0e0')
+            tw = draw.textlength(val, font=font)
+            draw.text((x + (col_widths[ci] - tw) / 2, y + 8), val, fill='#333', font=font)
+            x += col_widths[ci]
+        y += row_height
+
+    # 下边框
+    for ci in range(len(col_widths)):
+        x = x_start + sum(col_widths[:ci])
+        draw.line([x, y, x + col_widths[ci], y], fill='#ccc', width=1)
+
+    # 保存
+    out_path = '/tmp/group_stats.png'
+    img.save(out_path)
+    return out_path
+
+
+def _push_group_stats_image(groups: dict) -> bool:
+    """生成分组统计表格图片并推送到飞书"""
+    import requests, json, os
+
+    # 从 OpenClaw 配置读取飞书 app 凭证
+    openclaw_config_path = os.path.expanduser('~/.openclaw/openclaw.json')
+    try:
+        with open(openclaw_config_path) as f:
+            cfg = json.load(f)
+        feishu_cfg = cfg.get('channels', {}).get('feishu', {})
+        app_id = feishu_cfg.get('appId', '')
+        app_secret = feishu_cfg.get('appSecret', '')
+        receive_id = feishu_cfg.get('allowFrom', [None])[0] or 'ou_cb7d1736b41d44ff4e5485599b80cb5d'
+    except Exception as e:
+        logger.error(f'[图片推送] 读取配置失败: {e}')
+        return False
+
+    if not app_id or not app_secret:
+        logger.error('[图片推送] appId 或 appSecret 为空')
+        return False
+
+    try:
+        # 生成图片
+        img_path = _render_group_stats_table(groups)
+
+        # 获取 token
+        token_resp = requests.post(
+            'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+            json={'app_id': app_id, 'app_secret': app_secret}, timeout=10)
+        if token_resp.status_code != 200:
+            return False
+        token = token_resp.json().get('tenant_access_token', '')
+
+        # 上传图片
+        with open(img_path, 'rb') as f:
+            upload_resp = requests.post(
+                'https://open.feishu.cn/open-apis/im/v1/images',
+                headers={'Authorization': f'Bearer {token}'},
+                files={'image': ('table.png', f, 'image/png')},
+                data={'image_type': 'message'}, timeout=15)
+
+        if upload_resp.status_code != 200:
+            return False
+        upload_data = upload_resp.json()
+        if upload_data.get('code') != 0:
+            return False
+
+        image_key = upload_data['data']['image_key']
+
+        # 发送图片消息
+        msg_payload = {
+            'receive_id': receive_id,
+            'msg_type': 'image',
+            'content': json.dumps({'image_key': image_key})
+        }
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json; charset=utf-8'}
+        send_resp = requests.post(
+            'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id',
+            json=msg_payload, headers=headers, timeout=10)
+
+        return send_resp.status_code == 200
+    except Exception as e:
+        logger.error(f'[图片推送] 失败: {e}')
+        return False
 
 
 def daily_close_task() -> str:
@@ -680,11 +848,159 @@ def daily_close_task() -> str:
     report = render_report(data)
     
     print(report)
+
+    # 推送分组统计表格图片（T-2日复盘 B/C/D 分组统计）
+    try:
+        if isinstance(yesterday_picks, list):
+            groups = {
+                'B组(60~64)': [],
+                'C组(65~69)': [],
+                'D组(≥70)': [],
+            }
+            for p in yesterday_picks:
+                sc = p.get('total_score', 0)
+                if 60 <= sc < 65:
+                    groups['B组(60~64)'].append(p)
+                elif 65 <= sc < 70:
+                    groups['C组(65~69)'].append(p)
+                elif sc >= 70:
+                    groups['D组(≥70)'].append(p)
+            _push_group_stats_image(groups)
+            logger.info('[图片推送] 分组统计表格已推送')
+    except Exception as e:
+        logger.error(f'[图片推送] 异常: {e}')
+
     _log_timing(_t_start, "渲染输出")
     _total = _time.time() - _t_start
     logger.info(f'[TIMING] 总耗时: {_total:.1f}s')
     
     return report
+
+
+def _render_group_stats_table(groups: dict) -> str:
+    """生成分组统计表格图片，返回图片文件路径"""
+    from PIL import Image, ImageDraw, ImageFont
+
+    headers = ["分组条件", "个股数量", "盈利数量", "胜率", "平均收益率"]
+    rows = []
+
+    for label, members in groups.items():
+        if members:
+            cnt = len(members)
+            wins = sum(1 for p in members if p['change_pct'] > 0)
+            wr = round(wins / cnt * 100, 1) if cnt > 0 else 0
+            avg = sum(p['change_pct'] for p in members) / cnt
+            rows.append([label, str(cnt), str(wins), f"{wr}%", f"{avg:+.2f}%"])
+        else:
+            rows.append([label, "0", "0", "0%", "0%"])
+
+    font_path = '/System/Library/Fonts/STHeiti Medium.ttc'
+    font = ImageFont.truetype(font_path, 14)
+    bold_font = ImageFont.truetype(font_path, 14)
+
+    col_widths = [180, 100, 100, 80, 120]
+    row_height = 36
+    header_h = 40
+    padding = 10
+
+    total_w = sum(col_widths) + padding * (len(col_widths) + 1)
+    total_h = header_h + row_height * len(rows) + padding * 2 + 40
+
+    img = Image.new('RGB', (total_w, total_h), 'white')
+    draw = ImageDraw.Draw(img)
+
+    # 标题
+    draw.text((padding + 4, 8), "📊 分组统计", fill='#333', font=font)
+
+    y = 40 + padding
+    x_start = padding
+
+    # 表头行
+    draw.rectangle([0, y, total_w, y + header_h], fill='#4a90d9')
+    x = x_start
+    for i, h in enumerate(headers):
+        tw = draw.textlength(h, font=bold_font)
+        draw.text((x + (col_widths[i] - tw) / 2, y + 8), h, fill='white', font=bold_font)
+        x += col_widths[i]
+    y += header_h
+
+    # 数据行
+    for ri, row in enumerate(rows):
+        x = x_start
+        bg = '#f5f7fa' if ri % 2 == 0 else 'white'
+        draw.rectangle([0, y, total_w, y + row_height], fill=bg)
+        for ci, val in enumerate(row):
+            draw.rectangle([x, y, x + col_widths[ci], y + row_height], outline='#e0e0e0')
+            tw = draw.textlength(val, font=font)
+            draw.text((x + (col_widths[ci] - tw) / 2, y + 8), val, fill='#333', font=font)
+            x += col_widths[ci]
+        y += row_height
+
+    out_path = '/tmp/group_stats_table.png'
+    img.save(out_path)
+    return out_path
+
+
+def _push_group_stats_image(groups: dict) -> bool:
+    """生成分组统计表格图片并推送到飞书"""
+    import requests, json, os
+
+    
+    openclaw_config_path = os.path.expanduser('~/.openclaw/openclaw.json')
+    try:
+        with open(openclaw_config_path) as f:
+            cfg = json.load(f)
+        feishu_cfg = cfg.get('channels', {}).get('feishu', {})
+        app_id = feishu_cfg.get('appId', '')
+        app_secret = feishu_cfg.get('appSecret', '')
+        receive_id = feishu_cfg.get('allowFrom', [None])[0] or 'ou_cb7d1736b41d44ff4e5485599b80cb5d'
+    except Exception as e:
+        logger.error(f'[图片推送] 读取配置失败: {e}')
+        return False
+
+    if not app_id or not app_secret:
+        logger.error('[图片推送] appId 或 appSecret 为空')
+        return False
+
+    try:
+        img_path = _render_group_stats_table(groups)
+
+        token_resp = requests.post(
+            'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+            json={'app_id': app_id, 'app_secret': app_secret}, timeout=10)
+        if token_resp.status_code != 200:
+            return False
+        token = token_resp.json().get('tenant_access_token', '')
+
+        with open(img_path, 'rb') as f:
+            upload_resp = requests.post(
+                'https://open.feishu.cn/open-apis/im/v1/images',
+                headers={'Authorization': f'Bearer {token}'},
+                files={'image': ('table.png', f, 'image/png')},
+                data={'image_type': 'message'}, timeout=15)
+
+        if upload_resp.status_code != 200:
+            return False
+        upload_data = upload_resp.json()
+        if upload_data.get('code') != 0:
+            return False
+
+        image_key = upload_data['data']['image_key']
+
+        msg_payload = {
+            'receive_id': receive_id,
+            'msg_type': 'image',
+            'content': json.dumps({'image_key': image_key})
+        }
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json; charset=utf-8'}
+        send_resp = requests.post(
+            'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id',
+            json=msg_payload, headers=headers, timeout=10)
+
+        return send_resp.status_code == 200
+    except Exception as e:
+        logger.error(f'[图片推送] 失败: {e}')
+        return False
 
 
 if __name__ == '__main__':
