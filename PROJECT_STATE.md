@@ -3,7 +3,7 @@
 ## 项目概览
 - **项目**: StockAnalysis — 股票分析系统
 - **路径**: `/Users/wangyanming/workspace/StockAnalysis/`
-- **数据库**: MySQL `mysql://root:stock123@127.0.0.1:3306/stock_analysis`
+- **数据库**: MySQL，`utils/dao.py` 按项目路径自动判定生产/开发库（路径含 `StockAnalysis-dev` → 开发库 `stock_analysis_dev`；否则 → 生产库 `stock_analysis`）；显式设 `STOCK_DB_URL` 优先
 - **预检**: `bash tests/preflight.sh`
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`

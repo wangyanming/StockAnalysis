@@ -6,9 +6,16 @@
     from utils.dao import get_db, DB
     db = get_db()
 
-环境变量:
-    STOCK_DB_URL=mysql://root:***@127.0.0.1:3306/stock_analysis
-    如果未设置，默认走 MySQL (127.0.0.1:3306/stock_analysis)
+两套数据库连接串（单一真相，密码均已脱敏为 ***）：
+    生产库: mysql://root:***@127.0.0.1:3306/stock_analysis
+    开发库: mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev
+
+环境变量 & 路径判定（优先级从高到低）:
+    1. STOCK_DB_URL 显式设置 → 最高优先，忽略路径判定
+    2. 未设置 → 按项目路径自动判定：
+        路径含 StockAnalysis-dev → 连开发库
+        否则 → 连生产库
+    3. STOCK_DB_UNIX=1 → 用 Unix Socket (/tmp/mysql.sock) 覆盖 host/port
 
 连接池:
     使用 DBUtils.PooledDB，maxconnections=10, mincached=2。
@@ -30,9 +37,23 @@ logger = logging.getLogger(__name__)
 # 环境变量配置
 # ─────────────────────────────────────────────
 
-# 默认 MySQL 连接（无需环境变量即可工作）
-# 密码可通过环境变量 STOCK_DB_URL 覆盖
-_DEFAULT_MYSQL_URL = "mysql://root:stock123@127.0.0.1:3306/stock_analysis"
+# ── 两套数据库连接串（单一真相，密码均已脱敏为 ***）──
+# 生产库: mysql://root:***@127.0.0.1:3306/stock_analysis
+# 开发库: mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev
+_PROD_MYSQL_URL = "mysql://root:***@127.0.0.1:3306/stock_analysis"
+_DEV_MYSQL_URL = "mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev"
+
+# 项目根 = dao.py 所在目录的上一级（utils/ 上溯一级）
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 精确判定开发目录：路径中必须出现完整 dev 项目目录名 StockAnalysis-dev
+def _default_mysql_url() -> str:
+    """按项目根路径自动返回默认数据库连接串（生产库 / 开发库）"""
+    if "StockAnalysis-dev" in _PROJECT_ROOT:
+        return _DEV_MYSQL_URL
+    return _PROD_MYSQL_URL
+
+_DEFAULT_MYSQL_URL = _default_mysql_url()
 DB_URL = os.environ.get("STOCK_DB_URL", _DEFAULT_MYSQL_URL)
 
 # 连接池参数
