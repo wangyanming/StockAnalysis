@@ -20,6 +20,27 @@
 - 修复方向：`utils/dao.py` 改为连接池（`DBUtils.PooledDB`）
 - QA 也缺失了并发/连续请求测试场景（已在 SKILL.md 11.5 补充）
 
+### 2026-08-05 git 结构重组 + DB 收敛 + limit_up_tracking 废弃
+
+**背景**：dev 与生产在 main 上分叉且均未 push 导致脱节，已重组：
+- 生产推 `4196eca` 到 origin/main（生产基线 `main`=4196eca）
+- 新建独立 `dev` 分支（=4196eca 起点），开发迭代在 dev 分支，main 保持生产稳定基线
+- **后续开发一律在 dev 分支进行**，main 只接受 merge 合入
+
+#### 改造2：DB 连接统一收敛 ✅ 已完成（commit `ae7d7a7`）
+- `utils/dao.py` 新增按项目路径自动判定生产/开发库（含 `StockAnalysis-dev` → 开发库，否则 → 生产库）；`STOCK_DB_URL` 显式设置最高优先；保留 unix_socket + 连接池
+- 删除 `daily_fetch.py`/`fetch_all_stocks_daily.py`/`close_task.py` 的独立 `STOCK_DB_URL` 兜底块，连库统一收敛 dao.py 单一入口
+- 方案：`docs/design/DESIGN-20260805-03`
+
+#### 改造1：废弃 limit_up_tracking 表 ✅ 已完成（待提交 dev）
+- `limit_up_analysis.py`：删 `limit_up_tracking` 建表+索引、`update_tracking()`、`run_daily_analysis` 内调用、`get_tracking_list()`、`get_continuous_trackers()`
+- `daily_pick_v2.py`：删连板梯队死代码块（`results['trackers']` 无消费方）
+- `daily_pick.py`：删除死文件（174行，零引用）
+- `web_server.py`：删 `/api/limit-up/track` 孤儿接口（保留 4 个活接口）
+- `morning_check.py`：🔗连板查询改活数据源 `daily_limit_up.board_times`（原读 `limit_up_tracking` 死表已停写，显示过期数据）
+- **注**：`limit_up_tracking` 物理表数据保留不删（仅代码废弃，符合不动生产库数据约定）；是否 drop 表另议
+- 方案：`docs/design/DESIGN-20260805-04`
+
 ### 正在处理（2026-07-16）
 
 #### 1. MySQL 连接池改造 ✅ 已完成

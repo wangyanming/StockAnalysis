@@ -77,20 +77,8 @@ def pick_stocks_v2():
         logger.warning(f"涨停分析失败: {e}")
     _log_timing(_T_START, "涨停数据分析")
 
-    # 3. 连板梯队
-    logger.info("3. 连板梯队...")
-    try:
-        trackers = zt.get_continuous_trackers(min_days=1)
-        if trackers:
-            boards = sorted(trackers, key=lambda x: x.get('board_count', 1), reverse=True)[:10]
-            results['trackers'] = boards
-            logger.info(f"连板: {[(t.get('name'), t.get('board_count')) for t in boards[:5]]}")
-    except Exception as e:
-        logger.warning(f"连板分析失败: {e}")
-    _log_timing(_T_START, "连板梯队分析")
-
-    # 4. 板块表现
-    logger.info("4. 板块表现分析...")
+    # 3. 板块表现
+    logger.info("3. 板块表现分析...")
     try:
         sectors = _get_db().fetchall(
             "SELECT * FROM sector_performance WHERE record_date = %s AND rank_type = %s ORDER BY id",
