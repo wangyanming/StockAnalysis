@@ -48,3 +48,6 @@ backtest_*_output.json
 backtest_*_v*.json
 closing_review_*.txt
 *.pid
+
+# 本地 DB 连接凭据（密码不进版本库）
+config/db_url.local.json

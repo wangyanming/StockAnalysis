@@ -3,10 +3,16 @@
 ## 项目概览
 - **项目**: StockAnalysis — 股票分析系统
 - **路径**: `/Users/wangyanming/workspace/StockAnalysis/`
-- **数据库**: MySQL，`utils/dao.py` 按项目路径自动判定生产/开发库（路径含 `StockAnalysis-dev` → 开发库 `stock_analysis_dev`；否则 → 生产库 `stock_analysis`）；显式设 `STOCK_DB_URL` 优先
+- **数据库**: MySQL，`utils/dao.py` 按项目路径自动判定生产/开发库（路径含 `StockAnalysis-dev` → 开发库 `stock_analysis_dev`；否则 → 生产库 `stock_analysis`）；凭据由 `config/db_url.local.json` 本地文件提供（版本库外、.gitignore），dao.py 按项目路径选 prod/dev；显式设 `STOCK_DB_URL` 优先
 - **预检**: `bash tests/preflight.sh`
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
+
+## 最新变更：DB 连接凭据改为本地配置文件（2026-08-05）
+
+- **方案**: DESIGN-20260805-05
+- **改法**: dao.py 新增 _load_db_url_from_local_config()，优先级 本地config > STOCK_DB_URL > 路径判定；新建 config/db_url.local.json（存 prod/dev 两套真实 URL，gitignore 排除）；密码不再写源码
+- **原因**: 改造2 把密码脱敏为 *** 但生产/dev 均无注入机制 → Access denied；环境变量方案需逐个 cron 改命令繁琐，改本地文件最省事且 cron 兼容
 
 ## 当前阶段：选股追踪页面改版（已完成）
 
