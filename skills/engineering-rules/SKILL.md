@@ -296,3 +296,36 @@ git commit -m "说明"
 - **`pre-commit` hook**：强制跑 `check_engineering.sh`，不通过阻止提交
 
 紧急绕过（不推荐）：`git commit --no-verify`
+
+---
+
+## 13. 开发/生产环境职责与边界
+
+### 一、生产环境
+1. 项目地址：`/Users/wangyanming/workspace/StockAnalysis`
+2. 数据库：`stock_analysis`
+3. 职责：
+   a. 拉取 git 代码（pull dev 分支）
+   b. 部署服务（launchd 自动重启 web_server）
+4. 禁止：
+   a. 禁止直接改动代码（不 edit / commit / push）
+   b. 禁止手动改生产库（除明确的数据处理指令）
+
+### 二、开发环境
+1. 项目地址：`/Users/wangyanming/workspace/StockAnalysis-dev`
+2. 数据库：`stock_analysis_dev`
+3. 职责：
+   a. 功能开发
+   b. 功能验证
+   c. 提交代码到 git dev 分支
+4. 禁止：
+   a. 除查询外禁止操作生产库（`stock_analysis`）
+   b. 禁止提交代码到 main 分支
+
+### 三、流程
+dev 环境开发、验证
+→ 提交到 git dev 分支
+→ 生产环境 pull dev 分支
+→ 生产环境部署、重启服务
+→ 生产环境跑通全流程
+→ main agent 将 dev 分支 merge 到 main 分支
