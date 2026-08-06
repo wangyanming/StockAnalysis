@@ -329,3 +329,26 @@ dev 环境开发、验证
 → 生产环境部署、重启服务
 → 生产环境跑通全流程
 → main agent 将 dev 分支 merge 到 main 分支
+
+### 四、提交流程门禁（QA 关口，2026-08-06 定稿，必须遵守）
+
+**提交到 git 前必须区分改动类型：**
+
+| 改动类型 | 是否走 QA | 能否直接 commit+push |
+|---------|----------|----------------------|
+| 文档（方案/设计/报告/规范） | 否 | ✅ 可直接 commit+push dev |
+| 代码（功能/修复） | **必须** | ❌ 必须先 QA 验收通过，才可 commit+push dev |
+
+**代码开发的标准顺序（严禁颠倒）：**
+1. RD 在开发环境（`StockAnalysis-dev`）开发
+2. RD 自测
+3. **QAAgent 验收（连开发库 `stock_analysis_dev`）**
+4. **验收通过后** → 提交 commit
+5. push 到 origin/dev
+6. 生产 pull dev → 部署重启 → 生产跑通全流程 → dev→main merge
+
+**红线：**
+- 严禁先 push 到 git 再做 QA（2026-08-06 曾因 RD 自行 commit+push 未经 QA 而回退纠正）
+- QA 结论（可否提交）是代码进入 dev 分支的唯一依据
+- RD 不得自行 push 代码改动（只做开发+自测，提交由 QA 通过后执行）
+- hard reset 会连工作区一起清空；如需回退，先 `git format-patch` 备份改动再 `git reset --hard`

@@ -8,6 +8,12 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
+## 最新变更：选股日期参数化（trade_date 可重跑历史选股）（2026-08-06）
+
+- **方案**: DESIGN-20260805-06
+- **改法**: scorer.py 新增模块级日期锚点 `set_trade_date()`/`_get_today()`/`_get_today_dash()`；8 处 python `datetime.now()` 取数读到锚点 + 1 处 SQL CURDATE 改参数化（20日窗口回推锚点日）；`daily_pick_v2.pick_stocks_v2()` 签名改为 `(trade_date=None)`，内部一次性派生锚定变量 t/t_dash 并调 `set_trade_date` 锚定 scorer；涨停池/板块/补查统一改用 t；`__main__` 加可选 `--date` 便于手工回测
+- **原因**: 让选股可按历史日期重跑支撑回测（历史日选股不再拿实时价/实时大盘）；默认 None 保持取今天行为不变
+
 ## 最新变更：DB 连接凭据改为本地配置文件（2026-08-05）
 
 - **方案**: DESIGN-20260805-05
