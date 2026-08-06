@@ -18,7 +18,7 @@
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 import urllib.request
 import json
@@ -64,6 +64,38 @@ MAX_SCORES = {
 }
 
 logger = setup_logger("scorer")
+
+
+# ─── 回放交易日锚点（trade_date 参数化） ───
+# 模块级日期锚点：未设置时 _get_today()/_get_today_dash() 回退 datetime.now()，
+# 即生产默认取当天；回测时 set_trade_date(历史日) 可让全部评分取数锚定该日。
+_anchor_date = None       # %Y%m%d 紧凑串
+_anchor_date_dash = None   # %Y-%m-%d 连字符串
+
+
+def set_trade_date(trade_date_str=None):
+    """设置回放交易日锚定。传 None 时复位锚点（回退取今天）。
+    兼容 %Y%m%d 紧凑串或 %Y-%m-%d 连字符串作为输入。"""
+    global _anchor_date, _anchor_date_dash
+    if trade_date_str is None:
+        _anchor_date = None
+        _anchor_date_dash = None
+        return
+    s = str(trade_date_str).strip()
+    if '-' in s:
+        s = s.replace('-', '')
+    _anchor_date = s
+    _anchor_date_dash = f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+
+
+def _get_today():
+    """取当前交易日（%Y%m%d 紧凑）；未锚定回退 datetime.now()"""
+    return _anchor_date or datetime.now().strftime('%Y%m%d')
+
+
+def _get_today_dash():
+    """取当前交易日（%Y-%m-%d 连字符）；未锚定回退 datetime.now()"""
+    return _anchor_date_dash or datetime.now().strftime('%Y-%m-%d')
 
 
 def _normalize_code(code: str) -> str:
@@ -122,7 +154,7 @@ def _get_today_quote_from_db(code: str) -> dict:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
         row = db.fetchone('''
             SELECT open, close, high, low, volume, change_pct
             FROM stock_daily
@@ -150,7 +182,7 @@ def check_market_status() -> Dict:
     try:
         from utils.dao import get_db
         db = get_db()
-        today_dash = datetime.now().strftime('%Y-%m-%d')
+        today_dash = _get_today_dash()
         row = db.fetchone(
             'SELECT current_price, change_pct, open FROM index_quotes '
             'WHERE index_code=%s AND record_date=%s',
@@ -198,7 +230,7 @@ def score_chip_structure(code: str, name: str, q: dict) -> Tuple[int, list]:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
 
         klines = db.fetchall('''
             SELECT trade_date, close, high, low, volume, change_pct
@@ -295,7 +327,7 @@ def score_momentum(code: str, name: str, q: dict) -> Tuple[int, list]:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
 
         price = q.get('price', 0)
         prev_close = q.get('prev_close', 0)
@@ -419,7 +451,7 @@ def score_sector_environment(code: str, name: str) -> Tuple[int, list]:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
 
         ind_row = db.fetchone(
             'SELECT industry FROM daily_limit_up WHERE code=%s AND trade_date=%s AND industry IS NOT NULL AND industry!="" LIMIT 1',
@@ -507,7 +539,7 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
 
         klines = db.fetchall('''
             SELECT trade_date, close, high, low, change_pct, volume
@@ -689,7 +721,7 @@ def score_market_safety(market: dict) -> Tuple[int, list]:
     try:
         from utils.dao import get_db
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        today = _get_today()
         cnt = db.fetchone(
             'SELECT COUNT(DISTINCT industry) as cnt FROM daily_limit_up WHERE trade_date=%s AND (status IS NULL OR status != \'跌停\')',
             (today,))
@@ -719,7 +751,7 @@ def build_candidate_pool(today_up: list = None) -> List[Dict]:
     seen = set()
 
     from utils.dao import get_db
-    today = datetime.now().strftime('%Y%m%d')
+    today = _get_today()
     db = get_db()
 
     if today_up is None:
@@ -805,10 +837,12 @@ def _score_position_in_range(code: str, q: dict) -> int:
     try:
         from utils.dao import get_db
         db = get_db()
+        # 20日窗口以锚定交易日回推（不再用 SQL CURDATE，支持历史回放）
+        _min_date = (datetime.strptime(_get_today(), '%Y%m%d') - timedelta(days=20)).strftime('%Y%m%d')
         cur = db.execute(
             "SELECT MIN(low) as min_l, MAX(high) as max_h FROM stock_daily "
-            "WHERE code=%s AND trade_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 20 DAY), '%%Y%%m%%d')",
-            (code,)
+            "WHERE code=%s AND trade_date >= %s",
+            (code, _min_date)
         )
         row = cur.fetchone()
         db.close()

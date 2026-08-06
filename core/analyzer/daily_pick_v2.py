@@ -21,7 +21,7 @@ sys.path.insert(0, os.getcwd())
 
 from utils.dao import get_db as _get_db
 from core.fetcher.limit_up_analysis import LimitUpAnalyzer
-from core.analyzer.scorer import check_market_status, score_candidate, format_score_report
+from core.analyzer.scorer import check_market_status, score_candidate, format_score_report, set_trade_date
 
 
 def _log_timing(t_start: float, label: str) -> None:
@@ -30,11 +30,19 @@ def _log_timing(t_start: float, label: str) -> None:
     logger.info(f"  [TIMING] {label}: {elapsed:.1f}s")
 
 
-def pick_stocks_v2():
+def pick_stocks_v2(trade_date: str = None):
     """
     新版选股逻辑：涨停发现热点 → 基本面筛选 → 综合评分 → 风险过滤
+    trade_date=None 时保持现有"取今天"行为；传入 %Y%m%d（或 %Y-%m-%d）时按该日锚定全部取数，
+    用于历史回放。调用前需确保 scorer 锚点一致（传入非 None 时内部自动 set_trade_date 锚定）。
     """
     from core.analyzer.scorer import fetch_sina_quote
+
+    # 一次性派生锚定变量：t 紧凑+t_dash 连字符，全函数复用
+    t = (trade_date or datetime.now().strftime('%Y%m%d')).replace('-', '')
+    t_dash = f"{t[:4]}-{t[4:6]}-{t[6:8]}"
+    # 锚定 scorer 模块日期锚点（传 None 或历史日均兼容），保证取数一致
+    set_trade_date(t)
 
     _T_START = time.time()
     zt = LimitUpAnalyzer()
@@ -54,7 +62,7 @@ def pick_stocks_v2():
     logger.info("2. 涨停板分析...")
     today_up = None
     try:
-        today_up = zt.get_today_limit_up()
+        today_up = zt.get_today_limit_up(trade_date=t)
         if today_up:
             seen = {}
             unique_up = []
@@ -82,7 +90,7 @@ def pick_stocks_v2():
     try:
         sectors = _get_db().fetchall(
             "SELECT * FROM sector_performance WHERE record_date = %s AND rank_type = %s ORDER BY id",
-            (datetime.now().strftime('%Y-%m-%d'), '涨幅')
+            (t_dash, '涨幅')
         )
         if sectors:
             top_sectors = sorted(sectors, key=lambda x: x.get('change_pct', 0), reverse=True)[:5]
@@ -100,7 +108,7 @@ def pick_stocks_v2():
 
     from utils.dao import get_db as _get_db
     db_pool = _get_db()
-    today_str = datetime.now().strftime('%Y%m%d')
+    today_str = t
     check = db_pool.fetchone('SELECT COUNT(*) as c FROM stock_daily WHERE trade_date=%s', (today_str,))
     target_date = today_str if check and check['c'] > 10 else None
     if not target_date:
@@ -116,7 +124,7 @@ def pick_stocks_v2():
         return r['name'] if r else name
 
     try:
-        three_months_ago = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
+        three_months_ago = (datetime.strptime(t, '%Y%m%d') - timedelta(days=90)).strftime('%Y%m%d')
         all_strong = db_pool.fetchall('''
             SELECT d.code, d.name, d.change_pct, d.close, d.amount, d.volume, d.turnover_rate
             FROM stock_daily d
@@ -203,9 +211,9 @@ def pick_stocks_v2():
     try:
         from utils.dao import get_db as _get_db2
         _db2 = _get_db2()
-        _today_str2 = datetime.now().strftime('%Y%m%d')
-        _five_days_ago = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
-        _sixty_days_ago = (datetime.now() - timedelta(days=65)).strftime('%Y%m%d')
+        _today_str2 = t
+        _five_days_ago = (datetime.strptime(t, '%Y%m%d') - timedelta(days=7)).strftime('%Y%m%d')
+        _sixty_days_ago = (datetime.strptime(t, '%Y%m%d') - timedelta(days=65)).strftime('%Y%m%d')
         
         if scored:
             codes_list = [r['code'] for r in scored]
@@ -450,7 +458,7 @@ def pick_stocks_v2():
                 'source': r.get('source', ''),
             })
 
-    _save_picks_to_db(results)
+    _save_picks_to_db(results, trade_date=t)
 
     _log_timing(_T_START, "总耗时")
 
@@ -631,12 +639,18 @@ def format_v2_report(results: dict) -> str:
     return "\n".join(lines)
 
 
-def _save_picks_to_db(results: dict):
-    """将选股结果保存到数据库"""
+def _save_picks_to_db(results: dict, trade_date: str = None):
+    """将选股结果保存到数据库。
+    trade_date=None 时写今天（生产默认）；传入锚定日（%Y%m%d，回放时由 pick_stocks_v2 传回放日）时写该回放日，
+    避免回放结果污染今天窗口（写库日期与取数日期来源一致，统一锚定）。"""
     from utils.dao import get_db
     try:
         db = get_db()
-        today = datetime.now().strftime('%Y%m%d')
+        # 写库 trade_date 锚定：优先用传入锚定日，未传回退今天的紧凑串（生产默认）
+        if trade_date:
+            today = str(trade_date).replace('-', '')
+        else:
+            today = datetime.now().strftime('%Y%m%d')
         db.execute('DELETE FROM daily_picks WHERE trade_date=%s', (today,))
 
         def _build_highlights(r: dict) -> str:
@@ -714,39 +728,49 @@ def _save_picks_to_db(results: dict):
 
 if __name__ == '__main__':
     logger.info("=== V2选股启动 ===")
-    results = pick_stocks_v2()
+    # 可选 --date 传参，便于手工回测历史日选股；默认 None 取今天
+    _replay_date = None
+    if '--date' in sys.argv:
+        _idx = sys.argv.index('--date')
+        if _idx + 1 < len(sys.argv):
+            _replay_date = sys.argv[_idx + 1]
+            logger.info(f"回放模式: trade_date={_replay_date}")
+    results = pick_stocks_v2(trade_date=_replay_date)
     output = format_v2_report(results)
     print("\n" + output + "\n")
 
-    save_path = os.path.join(os.path.dirname(__file__), 'daily_picks_v2.json')
-    with open(save_path, 'w') as f:
-        json.dump(results, f, ensure_ascii=False, default=str, indent=2)
-    logger.info(f"V2选股结果已保存到 daily_picks_v2.json")
+    # 生产（_replay_date=None）照常写三 JSON 文件；回放（非 None）跳过 JSON 落盘，
+    # 避免回放覆盖生产今天的文件（仍已写 daily_picks DB 回放日）。三 JSON 均无消费方、纯本地冗余。
+    if _replay_date is None:
+        save_path = os.path.join(os.path.dirname(__file__), 'daily_picks_v2.json')
+        with open(save_path, 'w') as f:
+            json.dump(results, f, ensure_ascii=False, default=str, indent=2)
+        logger.info(f"V2选股结果已保存到 daily_picks_v2.json")
 
-    old_path = os.path.join(os.path.dirname(__file__), 'daily_picks.json')
-    with open(old_path, 'w') as f:
-        old_data = {
-            **results,
-            'candidates': [{
-                'code': c['code'],
-                'name': c['name'],
-                'score': c.get('score', 0),
-                'grade': c.get('grade', ''),
-                'board_times': 1,
-                'source': c.get('source', ''),
-            } for c in results.get('candidates', [])],
-        }
-        json.dump(old_data, f, ensure_ascii=False, default=str, indent=2)
-    logger.info("已同步更新 daily_picks.json")
+        old_path = os.path.join(os.path.dirname(__file__), 'daily_picks.json')
+        with open(old_path, 'w') as f:
+            old_data = {
+                **results,
+                'candidates': [{
+                    'code': c['code'],
+                    'name': c['name'],
+                    'score': c.get('score', 0),
+                    'grade': c.get('grade', ''),
+                    'board_times': 1,
+                    'source': c.get('source', ''),
+                } for c in results.get('candidates', [])],
+            }
+            json.dump(old_data, f, ensure_ascii=False, default=str, indent=2)
+        logger.info("已同步更新 daily_picks.json")
 
-    top5_path = os.path.join(os.path.dirname(__file__), 'daily_top5.json')
-    with open(top5_path, 'w') as f:
-        top5_data = {
-            'date': datetime.now().strftime('%Y%m%d'),
-            'market': results.get('market', {}),
-            'total_limit_up': results.get('total_limit_up', 0),
-            'hot_industries': results.get('hot_industries', []),
-            'top5': results.get('candidates', [])[:5],
-        }
-        json.dump(top5_data, f, ensure_ascii=False, indent=2)
-    logger.info("已保存 daily_top5.json")
+        top5_path = os.path.join(os.path.dirname(__file__), 'daily_top5.json')
+        with open(top5_path, 'w') as f:
+            top5_data = {
+                'date': datetime.now().strftime('%Y%m%d'),
+                'market': results.get('market', {}),
+                'total_limit_up': results.get('total_limit_up', 0),
+                'hot_industries': results.get('hot_industries', []),
+                'top5': results.get('candidates', [])[:5],
+            }
+            json.dump(top5_data, f, ensure_ascii=False, indent=2)
+        logger.info("已保存 daily_top5.json")
