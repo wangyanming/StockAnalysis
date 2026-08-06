@@ -655,3 +655,16 @@
   - 监控标题：`近3日精选监控` → `近3日≥60分监控`
 - **原因**: 统一使用分数阈值筛选，与评分体系对齐
 - **验证**: Preflight 全部通过
+
+## 最新变更：大盘缓存清理 + close_task 注释清理（2026-08-06）
+
+**对应方案**: `docs/design/DESIGN-20260806-01-大盘缓存清理.md`
+
+**① 大盘缓存清理**（`core/analyzer/scorer.py` + `core/analyzer/daily_pick_v2.py`）：
+- `scorer.py`：删除模块级全局缓存 `_market_cache`；`check_market_status()` 变纯查询（每次调用查一次库，调用方自行上移）；`score_candidate()` 新增 `market=None` 参数，None 时内部取一次大盘兜底（向后兼容）
+- `daily_pick_v2.py`：L188 `score_candidate(code, name, market=market)` 显式传 key 为 0 的大盘 dict，大盘查库从「几百只 × 1 次」降为「单次查询1次」
+- **根因**: 大盘数据单次选股只需算一次，旧全局缓存是「假优化」；删除后依赖在 `daily_pick_v2` 上移为单次调用
+- **验证**: 语法检查 ✅、import 检查 ✅、check_engineering.sh ✅（除门禁脚本自身 pre-stored 缺陷项）、QA 报告 `logs/qa/20260806_143929.report.md`（结论 ✅ 通过）
+
+**② close_task.py 注释清理**（`core/analyzer/close_task.py`）：
+- 清理 2 处过时的 `limit_up_tracking` 注释残留（docstring L217 + 换手率注释 L396），与已废弃 `limit_up_tracking` 表保持一致。纯注释改动，无逻辑变更。

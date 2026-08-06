@@ -22,7 +22,6 @@ from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 import urllib.request
 import json
-import time
 import re
 import subprocess
 
@@ -65,8 +64,6 @@ MAX_SCORES = {
 }
 
 logger = setup_logger("scorer")
-
-_market_cache = {'time': 0, 'data': None}
 
 
 def _normalize_code(code: str) -> str:
@@ -147,12 +144,8 @@ def _get_today_quote_from_db(code: str) -> dict:
 
 
 def check_market_status() -> Dict:
-    """大盘环境判断（从 index_quotes 表读取，不调外部API）"""
-    global _market_cache
-    now = time.time()
-    if now - _market_cache['time'] < 900 and _market_cache['data']:
-        return _market_cache['data']
-
+    """大盘环境判断（从 index_quotes 表读取，不调外部API）。
+    每次调用查一次库，调用方应自行上移缓存。"""
     result = {'status': '正常', 'score': 80, 'sh_change': 0, 'reason': ''}
     try:
         from utils.dao import get_db
@@ -182,7 +175,6 @@ def check_market_status() -> Dict:
                 result['score'] = 80
                 result['reason'] = f'{change:+.1f}%，正常交易环境'
         db.close()
-        _market_cache = {'time': now, 'data': result}
     except Exception as e:
         logger.warning(f"从 index_quotes 获取大盘失败: {e}")
     return result
@@ -844,7 +836,7 @@ def _score_position_in_range(code: str, q: dict) -> int:
 # ══════════════════════════════════════════════════════════════
 
 
-def score_candidate(code: str, name: str) -> Dict:
+def score_candidate(code: str, name: str, market: dict = None) -> Dict:
     """
     综合评分（v6.0新版，预测型）
 
@@ -858,6 +850,9 @@ def score_candidate(code: str, name: str) -> Dict:
 
     注意：收盘后从DB取今日数据，不再调新浪实时接口（避免超时）。
     位置评分独立加在总分后，仅补充不稀释其他维度权重。
+
+    :param market: 大盘环境 dict（由调用方传入，避免逐只重复查库）。
+                   None 时内部取一次大盘兜底（向后兼容）。
     """
     report = {
         'code': code, 'name': name,
@@ -867,7 +862,9 @@ def score_candidate(code: str, name: str) -> Dict:
     }
 
     # 0. 大盘开关（大盘跌>1.5%时不拦截评分，仅在大盘安全维度体现）
-    market = check_market_status()
+    # market 由调用方传入（避免逐只重复查库）；None 时内部取一次大盘兜底（向后兼容）。
+    if market is None:
+        market = check_market_status()
 
     # 获取今日行情（优先DB，回退新浪）
     q = _get_today_quote_from_db(code)

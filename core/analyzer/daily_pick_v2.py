@@ -185,7 +185,7 @@ def pick_stocks_v2():
     scored = []
     for idx600, (code, name, source) in enumerate(raw_candidates, 1):
         try:
-            r = score_candidate(code, name)
+            r = score_candidate(code, name, market=market)
             r['source'] = source
             scored.append(r)
             if idx600 % 100 == 0:

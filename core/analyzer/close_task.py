@@ -214,7 +214,7 @@ def _load_sector_data(trade_date: str) -> dict:
 
 
 def _load_limit_up_data(trade_date: str) -> dict:
-    """从 daily_limit_up + limit_up_tracking 读取涨停/跌停"""
+    """从 daily_limit_up 读取涨停/跌停"""
     # 涨停
     zt_rows = _db.fetchall(
         "SELECT code, name, price, change_pct, turnover_rate, seal_first_time, seal_last_time, "
@@ -393,7 +393,7 @@ def _build_picks_data(trade_date: str, candidate_stocks: list) -> dict:
                     return ('午后封板', 1)
         return ('盘中封板', 2)
     
-    # 换手率注释（从 limit_up_tracking / daily_limit_up 获取，兜底从新浪获取）
+    # 换手率注释（从 daily_limit_up 获取，兜底从新浪获取）
     def _turnover_note(code):
         # 优先从 daily_limit_up 拿
         row = _db.fetchone(
