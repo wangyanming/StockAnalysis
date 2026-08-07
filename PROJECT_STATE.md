@@ -626,6 +626,13 @@
 - **原因**: 飞书纯文本 command 模式推送合并连续换行，ReAct 复盘段 lose 了换行格式
 - **验证**: check_engineering.sh ✅, 语法检查 ✅, import 检查 ✅
 
+## 最新变更：删除 backtest/time_machine.py（2026-08-05）
+
+- **决定**: 回测时间机方案废弃，后续回测不用此方案，删除 `backtest/time_machine.py`
+- 该文件此前为未提交改动（含 `_patch_datetime_module`/`_fetch_sina_quote_from_db` 方法），已整体舍弃
+
+---
+
 ## 最新变更：v6评分因子（维度）剔除回测（正确版）（2026-07-31）
 
 - **场景**: 纠正昨晚 `backtest/backtest_v6copy.py`（未跟踪）的假回测（8轮结果全一样，因每笔重跑完整选股+新浪fallback）
