@@ -730,13 +730,14 @@ function fmtPctSpan(v) {
 }
 
 function fmtStocksCell(stocks) {
-  // 渲染个股极值列：并列多只用 <br> 换行；空数组显示 '-'
+  // 渲染个股极值列：只显示股票名（代码+名称），不显示收益率/亏损率数值
+  // （表格前面已有「最大收益/最大亏损」百分比列，个股列仅补名称，避免重复）
+  // 并列多只用 <br> 换行；空数组显示 '-'
   if (!stocks || !stocks.length) return '<span style="color:#999">-</span>';
   var parts = stocks.map(function (s) {
-    var cls = s.return_pct >= 0 ? 'up' : 'down';
-    var prefix = s.return_pct >= 0 ? '+' : '';
-    return (s.name || s.code || '') + '(' + (s.code || '') + ') ' +
-      '<span class="' + cls + '">' + prefix + s.return_pct.toFixed(2) + '%</span>';
+    var label = (s.name || s.code || '');
+    if (s.code) label += '(' + s.code + ')';
+    return '<span style="color:#4a5bc7;font-weight:600">' + label + '</span>';
   });
   return parts.join('<br>');
 }
@@ -763,7 +764,7 @@ function renderGroupStats(data) {
   html += '<div class="stat-item"><div class="stat-label">均收益率</div><div class="stat-value ' + avgClsS + '">' + (summary.avg_return != null ? (summary.avg_return > 0 ? '+' : '') + summary.avg_return.toFixed(2) + '%' : '-') + '</div></div>';
   html += '</div>';
   html += '<div class="card-body" style="overflow-x:auto">';
-  html += '<table><tr><th>分组</th><th>笔数</th><th>盈利笔数</th><th>胜率</th><th>平均收益率</th><th>最大收益</th><th>最大亏损</th><th>最大收益个股</th><th>最大亏损个股</th></tr>';
+  html += '<table><tr><th>分组</th><th>笔数</th><th>盈利笔数</th><th>胜率</th><th>平均收益率</th><th>最大收益</th><th>最大收益个股</th><th>最大亏损</th><th>最大亏损个股</th></tr>';
 
   // 「全部(B+C+D)」汇总行（用 summary）
   html += '<tr style="background:#f4f6f9;font-weight:600">';
@@ -774,8 +775,8 @@ function renderGroupStats(data) {
   var sAvgCls = summary.avg_return != null && summary.avg_return > 0 ? 'up' : (summary.avg_return != null ? 'down' : '');
   html += '<td class="' + sAvgCls + '">' + (summary.avg_return != null ? (summary.avg_return > 0 ? '+' : '') + summary.avg_return.toFixed(2) + '%' : '-') + '</td>';
   html += '<td class="up">' + (summary.max_gain != null ? '+' + summary.max_gain.toFixed(2) + '%' : '-') + '</td>';
-  html += '<td class="down">' + (summary.max_loss != null ? summary.max_loss.toFixed(2) + '%' : '-') + '</td>';
   html += '<td>' + fmtStocksCell(summary.max_gain_stocks) + '</td>';
+  html += '<td class="down">' + (summary.max_loss != null ? summary.max_loss.toFixed(2) + '%' : '-') + '</td>';
   html += '<td>' + fmtStocksCell(summary.max_loss_stocks) + '</td>';
   html += '</tr>';
 
@@ -790,8 +791,8 @@ function renderGroupStats(data) {
     html += '<td>' + g.win_rate + '%</td>';
     html += '<td class="' + avgCls + '">' + avgPrefix + g.avg_return.toFixed(2) + '%</td>';
     html += '<td class="up">+' + g.max_gain.toFixed(2) + '%</td>';
-    html += '<td class="down">' + g.max_loss.toFixed(2) + '%</td>';
     html += '<td>' + fmtStocksCell(g.max_gain_stocks) + '</td>';
+    html += '<td class="down">' + g.max_loss.toFixed(2) + '%</td>';
     html += '<td>' + fmtStocksCell(g.max_loss_stocks) + '</td>';
     html += '</tr>';
   }
