@@ -390,6 +390,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             picks.append({
                 "code": code,
                 "name": row["name"],
+                "total_score": row.get("total_score"),
                 "trade_date": str(row.get("trade_date", "")),
                 "entry_price": entry_price,
                 "t1_open": t1_open,
@@ -401,14 +402,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "return_pct": return_pct,
             })
 
-        # 5. 分组概览：近20个交易日的B/C/D组统计
-        group_stats = self._build_picks_group_stats(db)
+        # 5. 分组概览：近20个交易日的B/C/D组统计（联动所选日期，无日期回退今日锚）
+        group_stats, summary = self._build_picks_group_stats(db, date_str)
 
         self.send_json({
             "picks": picks,
             "available_dates": available_dates[:50],
             "default_date": default_date,
             "group_stats": group_stats,
+            "summary": summary,
         })
 
     def _get_nth_trade_day_global(self, db, base_date, offset):
@@ -425,21 +427,24 @@ class RequestHandler(BaseHTTPRequestHandler):
                 break
         return unique[offset - 1] if len(unique) >= offset else None
 
-    def _build_picks_group_stats(self, db):
+    def _build_picks_group_stats(self, db, date_str=None):
         """构建近20个交易日的B/C/D分组统计数据
         收益率公式：(T+2收盘 - T+1开盘) / T+1开盘 × 100%，通过stock_daily表计算
         分组：B组(60~64)、C组(65~69)、D组(≥70)
+        新增：各组最大/最小收益个股并列数组 + 全窗口B+C+D合并summary
+        date_str: "YYYYMMDD" 或 None；None → 保持现状"今日"锚默认行为
+        返回: (result, summary) 元组
         """
-        today = datetime.now().strftime("%Y%m%d")
+        anchor = date_str if date_str else datetime.now().strftime("%Y%m%d")
 
-        # 取前第2个交易日作为截止日期（确保T+2数据可用）
+        # 取锚点前第2个交易日作为截止日期（确保T+2数据可用）
         t2_row = db.fetchone('''
             SELECT DISTINCT trade_date FROM stock_daily
             WHERE trade_date < %s
             ORDER BY trade_date DESC LIMIT 1 OFFSET 1
-        ''', (today,))
+        ''', (anchor,))
         if not t2_row:
-            return []
+            return [], {}
         cutoff_t2 = t2_row['trade_date']
 
         # 取近20个有选股数据的交易日
@@ -451,12 +456,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         active_dates = sorted([r['trade_date'] for r in active_dates])
 
         if not active_dates:
-            return []
+            return [], {}
 
-        # 查这些日期内的所有选股记录
+        # 查这些日期内的所有选股记录（补 name 字段用于个股列展示）
         placeholders = ','.join(['%s'] * len(active_dates))
         rows = db.fetchall(f'''
-            SELECT trade_date, code, total_score
+            SELECT trade_date, code, name, total_score
             FROM daily_picks
             WHERE trade_date IN ({placeholders})
               AND total_score >= 60
@@ -464,10 +469,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         ''', active_dates)
 
         if not rows:
-            return []
+            return [], {}
 
         # 对每条记录，计算收益率 = (T+2收盘 - T+1开盘) / T+1开盘 × 100%
-        groups = {'B': [], 'C': [], 'D': []}
+        # 各组容器：{'returns': [收益...], 'stocks': [{code,name,return_pct}...]}
+        groups = {'B': {'returns': [], 'stocks': []},
+                  'C': {'returns': [], 'stocks': []},
+                  'D': {'returns': [], 'stocks': []}}
+        all_stocks = []  # 全窗口(B+C+D)个股，供summary
         for r in rows:
             s = r['total_score'] or 0
             code = r['code']
@@ -503,30 +512,48 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             return_pct = round((t2_close - t1_open) / t1_open * 100, 2)
 
+            stock_item = {'code': code, 'name': r.get('name', ''), 'return_pct': return_pct}
+            all_stocks.append(stock_item)
+
             if 60 <= s < 65:
-                groups['B'].append(return_pct)
+                groups['B']['returns'].append(return_pct)
+                groups['B']['stocks'].append(stock_item)
             elif 65 <= s < 70:
-                groups['C'].append(return_pct)
+                groups['C']['returns'].append(return_pct)
+                groups['C']['stocks'].append(stock_item)
             elif s >= 70:
-                groups['D'].append(return_pct)
+                groups['D']['returns'].append(return_pct)
+                groups['D']['stocks'].append(stock_item)
+
+        def _pick_extrema(stocks):
+            """按 return_pct 取最高/最低的并列个股数组（并列全列）"""
+            max_gain_stocks, max_loss_stocks = [], []
+            if not stocks:
+                return max_gain_stocks, max_loss_stocks
+            max_pct = max(s['return_pct'] for s in stocks)
+            min_pct = min(s['return_pct'] for s in stocks)
+            max_gain_stocks = [s for s in stocks if s['return_pct'] == max_pct]
+            max_loss_stocks = [s for s in stocks if s['return_pct'] == min_pct]
+            return max_gain_stocks, max_loss_stocks
 
         label_map = {
             'B': 'B组(60~64)',
             'C': 'C组(65~69)',
             'D': 'D组(>=70)',
         }
-        result = []
-        for key in ['B', 'C', 'D']:
-            items = groups[key]
-            if not items:
-                continue
-            cnt = len(items)
-            wins = sum(1 for v in items if v > 0)
+
+        def _build_entry(key):
+            """组装单个分组统计对象（含个股极值数组）"""
+            returns = groups[key]['returns']
+            stocks = groups[key]['stocks']
+            cnt = len(returns)
+            wins = sum(1 for v in returns if v > 0)
             win_rate = round(wins / cnt * 100, 1)
-            avg_return = round(sum(items) / cnt, 2)
-            max_gain = round(max(items), 2)
-            max_loss = round(min(items), 2)
-            result.append({
+            avg_return = round(sum(returns) / cnt, 2)
+            max_gain = round(max(returns), 2)
+            max_loss = round(min(returns), 2)
+            max_gain_stocks, max_loss_stocks = _pick_extrema(stocks)
+            return {
                 'label': label_map[key],
                 'count': cnt,
                 'wins': wins,
@@ -534,10 +561,35 @@ class RequestHandler(BaseHTTPRequestHandler):
                 'avg_return': avg_return,
                 'max_gain': max_gain,
                 'max_loss': max_loss,
-            })
+                'max_gain_stocks': max_gain_stocks,
+                'max_loss_stocks': max_loss_stocks,
+            }
 
-        return result
+        result = []
+        for key in ['B', 'C', 'D']:
+            if not groups[key]['returns']:
+                continue
+            result.append(_build_entry(key))
 
+        # 全窗口(B+C+D)合并汇总
+        summary = {}
+        if all_stocks:
+            sum_returns = [s['return_pct'] for s in all_stocks]
+            all_cnt = len(sum_returns)
+            all_wins = sum(1 for v in sum_returns if v > 0)
+            max_gain_stocks, max_loss_stocks = _pick_extrema(all_stocks)
+            summary = {
+                'count': all_cnt,
+                'wins': all_wins,
+                'win_rate': round(all_wins / all_cnt * 100, 1),
+                'avg_return': round(sum(sum_returns) / all_cnt, 2),
+                'max_gain': round(max(sum_returns), 2),
+                'max_loss': round(min(sum_returns), 2),
+                'max_gain_stocks': max_gain_stocks,
+                'max_loss_stocks': max_loss_stocks,
+            }
+
+        return result, summary
 
     def api_limit_down(self, params):
         """API: 当日跌停板 — 默认日期走 get_display_date()"""
