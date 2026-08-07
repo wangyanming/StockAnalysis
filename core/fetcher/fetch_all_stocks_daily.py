@@ -17,9 +17,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# 默认使用 MySQL（无环境变量时兜底）
-if 'STOCK_DB_URL' not in os.environ:
-    os.environ['STOCK_DB_URL'] = 'mysql://root:stock123@127.0.0.1:3306/stock_analysis'
+# DB 连接统一收敛到 utils/dao.py（按项目路径自动判定生产/开发库）
 
 import akshare as ak
 

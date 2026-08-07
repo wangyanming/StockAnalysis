@@ -1,6 +1,6 @@
 ---
 name: design-doc
-description: "StockAnalysis 方案设计文档 skill：需求确认后编写技术方案，存 docs/design/，保留历史版本"
+description: "StockAnalysis 方案设计文档 skill：需求确认后编写技术方案，按 project-doc 文档规范存 design/，保留历史版本"
 ---
 
 # 方案设计文档编写
@@ -26,7 +26,7 @@ description: "StockAnalysis 方案设计文档 skill：需求确认后编写技�
 ```
 StockAnalysis/skills/engineering-rules/SKILL.md（单位校验等规范）
 StockAnalysis/PROJECT_STATE.md（当前阶段和已知问题）
-StockAnalysis/docs/requirements/REQ-*.md（关联需求文档）
+/Users/wangyanming/workspace/project-doc/StockAnalysis/requirement/req-*.md（关联需求文档，见 `project-doc/文档规范.md`）
 ```
 
 ### 2. 方案设计要点
@@ -41,11 +41,13 @@ StockAnalysis/docs/requirements/REQ-*.md（关联需求文档）
 
 ### 3. 生成文档
 
-用 `assets/design_template.md` 填充，产出存到：
+用 `assets/design_template.md` 填充，产出存到（路径与命名规则见 `project-doc/文档规范.md`）：
 
 ```
-docs/design/DESIGN-YYYYMMDD-<名称>.md
+/Users/wangyanming/workspace/project-doc/<项目名>/design/des-<日期yyyyMMdd>-<方案描述>-v<X.X>.md
 ```
+
+**示例：** `des-20260806-大盘概率改造-v1.0.md`
 
 ### 4. 保留历史版本
 

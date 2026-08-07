@@ -32,9 +32,7 @@ StockAnalysis/
 ├── utils/                   # 工具类（日志、HTTP、数据库、校验）
 ├── data/                    # 数据文件/缓存
 ├── tests/                   # 测试脚本 + 质量门禁
-├── docs/                    # 需求/架构/测试/部署文档
-│   ├── requirements/        # 需求文档（由 requirement-doc skill 生成）
-│   └── design/              # 方案设计（由 design-doc skill 生成）
+├── docs/                    # 遗留文档（存量，待迁移 project-doc，见 project-doc/文档规范.md）
 ├── logs/                    # 运行日志
 ├── skills/                  # 本地技能定义
 ├── memory/                  # 每日记录（软链到 openclaw workspace）
@@ -81,8 +79,8 @@ StockAnalysis/
 
 ```
 ✅ [确认] 需求范围是否明确？影响哪些文件？验收标准是什么？
-✅ [文档] docs/requirements/ 下是否有匹配的需求文档？无 → 先生成
-✅ [文档] docs/design/ 下是否有方案设计？复杂改动无 → 先生成
+✅ [文档] project-doc/<项目>/requirement/ 下是否有匹配的需求文档？无 → 先生成（规范见 project-doc/文档规范.md）
+✅ [文档] project-doc/<项目>/design/ 下是否有方案设计？复杂改动无 → 先生成
 ✅ [状态] PROJECT_STATE.md 是否已读？当前项目状态是否清晰？
 ✅ [规范] skills/engineering-rules/SKILL.md 是否已读？最新版本？
 ✅ [改后] 改完后是否会跑 tests/check_engineering.sh？
@@ -154,11 +152,17 @@ StockAnalysis/
 
 ## 6. 文档规范
 
+- **项目文档统一存放于 `project-doc` 根路径**，权威规则见 `project-doc/文档规范.md`（路径结构 + 命名规则：`req/des/testcase/testrep/rpt-日期-描述-版本.md`）
+  - 需求 → `project-doc/<项目>/requirement/`（req-），产品文档+原型
+  - 设计 → `project-doc/<项目>/design/`（des-）
+  - 测试 → `project-doc/<项目>/test/`（testcase-/testrep-）
+  - 报告 → `project-doc/<项目>/report/`（rpt-）
 - 代码改动 → 文档必须同步改
 - `PROJECT_STATE.md`：记录状态、问题、改动点
 - `MEMORY.md`：记录坑点、经验、最佳实践
 - 所有接口、字段、单位必须写进文档
 - 禁止只写代码、不写文档
+- 产出文档后**必须回读验证**：`ls` + `cat`/`head` 确认落盘，证据写入汇报
 
 ---
 
@@ -184,7 +188,7 @@ StockAnalysis/
 【数据校验结果】字段名=原始单位→目标单位, 偏差X%（<5%✅）
 【检查脚本结果】✅ check_engineering.sh 全部通过
 【验证步骤】1. xxx 2. yyy 3. zzz
-【更新文档】✅ PROJECT_STATE.md / MEMORY.md / docs/xxx
+【更新文档】✅ PROJECT_STATE.md / MEMORY.md / project-doc/文档规范.md
 【完成状态】✅ 已完成
 ```
 
@@ -230,7 +234,7 @@ StockAnalysis/
 ```
 开发完成 → sessions_spawn QA subagent（task中明确要求写文件）→
   QA 执行验证 →
-  QA 用 write 工具将报告写入 logs/qa/<YYYYMMDD_HHMMSS>.report.md →
+  QA 用 write 工具将报告写入 project-doc/StockAnalysis/test/testrep-<日期>-<描述>-v<X.X>.md →
   QA 用 message 工具发送结论到 channel →
     ✅ 通过: 主 agent 提交 git（hook自动检查最新QA报告）
     ❌ 不通过: 打回附根因 → 主 agent 修复 → 重新提测
@@ -243,7 +247,7 @@ StockAnalysis/
 ```
 ### ⚠️ 强制收尾流程
 完成所有验证后，按以下顺序严格执行：
-1. 先用 `write` 工具将完整测试报告写入 logs/qa/<YYYYMMDD_HHMMSS>.report.md
+1. 先用 `write` 工具将完整测试报告写入 project-doc/StockAnalysis/test/testrep-<日期>-<描述>-v<X.X>.md
 2. 再用 `message` 工具发送结论到本channel
 3. 顺序不可颠倒，缺一不可
 ```
@@ -278,7 +282,7 @@ StockAnalysis/
 | 改 cron 时间/配置 | `PROJECT_STATE.md` 定时任务表 |
 | 改外部可见配置 | 同步更新相关文档 |
 | 重大变更/新模块 | `MEMORY.md` |
-| 新需求/新功能 | `docs/requirements/` + `docs/design/` |
+| 新需求/新功能 | `project-doc/<项目>/requirement/` + `design/`（见 project-doc/文档规范.md） |
 
 ---
 
@@ -296,3 +300,59 @@ git commit -m "说明"
 - **`pre-commit` hook**：强制跑 `check_engineering.sh`，不通过阻止提交
 
 紧急绕过（不推荐）：`git commit --no-verify`
+
+---
+
+## 13. 开发/生产环境职责与边界
+
+### 一、生产环境
+1. 项目地址：`/Users/wangyanming/workspace/StockAnalysis`
+2. 数据库：`stock_analysis`
+3. 职责：
+   a. 拉取 git 代码（pull dev 分支）
+   b. 部署服务（launchd 自动重启 web_server）
+4. 禁止：
+   a. 禁止直接改动代码（不 edit / commit / push）
+   b. 禁止手动改生产库（除明确的数据处理指令）
+
+### 二、开发环境
+1. 项目地址：`/Users/wangyanming/workspace/StockAnalysis-dev`
+2. 数据库：`stock_analysis_dev`
+3. 职责：
+   a. 功能开发
+   b. 功能验证
+   c. 提交代码到 git dev 分支
+4. 禁止：
+   a. 除查询外禁止操作生产库（`stock_analysis`）
+   b. 禁止提交代码到 main 分支
+
+### 三、流程
+dev 环境开发、验证
+→ 提交到 git dev 分支
+→ 生产环境 pull dev 分支
+→ 生产环境部署、重启服务
+→ 生产环境跑通全流程
+→ main agent 将 dev 分支 merge 到 main 分支
+
+### 四、提交流程门禁（QA 关口，2026-08-06 定稿，必须遵守）
+
+**提交到 git 前必须区分改动类型：**
+
+| 改动类型 | 是否走 QA | 能否直接 commit+push |
+|---------|----------|----------------------|
+| 文档（方案/设计/报告/规范） | 否 | ✅ 可直接 commit+push dev |
+| 代码（功能/修复） | **必须** | ❌ 必须先 QA 验收通过，才可 commit+push dev |
+
+**代码开发的标准顺序（严禁颠倒）：**
+1. RD 在开发环境（`StockAnalysis-dev`）开发
+2. RD 自测
+3. **QAAgent 验收（连开发库 `stock_analysis_dev`）**
+4. **验收通过后** → 提交 commit
+5. push 到 origin/dev
+6. 生产 pull dev → 部署重启 → 生产跑通全流程 → dev→main merge
+
+**红线：**
+- 严禁先 push 到 git 再做 QA（2026-08-06 曾因 RD 自行 commit+push 未经 QA 而回退纠正）
+- QA 结论（可否提交）是代码进入 dev 分支的唯一依据
+- RD 不得自行 push 代码改动（只做开发+自测，提交由 QA 通过后执行）
+- hard reset 会连工作区一起清空；如需回退，先 `git format-patch` 备份改动再 `git reset --hard`

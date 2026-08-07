@@ -105,10 +105,10 @@ def format_market_overview(sections: list):
 
     # 连板
     high_rows = db.execute(
-        "SELECT name, max_board_count FROM limit_up_tracking WHERE latest_limit_date=%s AND max_board_count>=3 ORDER BY max_board_count DESC LIMIT 5",
+        "SELECT name, board_times FROM daily_limit_up WHERE trade_date=%s AND board_times>=3 ORDER BY board_times DESC, seal_first_time ASC LIMIT 5",
         (trade_date,)).fetchall()
     if high_rows:
-        board_strs = [f"{r['name']}{r['max_board_count']}板" for r in high_rows]
+        board_strs = [f"{r['name']}{r['board_times']}板" for r in high_rows]
         sections.append(f"  🔗 连板: {' | '.join(board_strs)}")
 
     sections.append("")

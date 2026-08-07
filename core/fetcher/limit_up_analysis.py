@@ -58,26 +58,6 @@ def init_zt_tables():
             )
         """)
         db.execute("""
-            CREATE TABLE IF NOT EXISTS limit_up_tracking (
-                id INTEGER PRIMARY KEY AUTO_INCREMENT,
-                code TEXT NOT NULL,
-                name TEXT NOT NULL,
-                first_limit_date TEXT NOT NULL,
-                latest_limit_date TEXT NOT NULL,
-                total_limit_days INTEGER DEFAULT 1,
-                max_board_count INTEGER DEFAULT 1,
-                current_board_count INTEGER DEFAULT 1,
-                first_price REAL,
-                latest_price REAL,
-                industry VARCHAR(64) DEFAULT '',
-                status VARCHAR(32) DEFAULT '观察中',
-                note TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE(code)
-            )
-        """)
-        db.execute("""
             CREATE TABLE IF NOT EXISTS limit_up_industry_stats (
                 id INTEGER PRIMARY KEY AUTO_INCREMENT,
                 trade_date TEXT NOT NULL,
@@ -95,10 +75,6 @@ def init_zt_tables():
             pass
         try:
             db.execute("CREATE INDEX idx_zt_code ON daily_limit_up(code)")
-        except Exception:
-            pass
-        try:
-            db.execute("CREATE INDEX idx_track_code ON limit_up_tracking(code)")
         except Exception:
             pass
         logger.info("涨停板表初始化完成")
@@ -379,59 +355,6 @@ class LimitUpAnalyzer:
         logger.info(f"保存涨停数据完成: {saved}/{len(df)}只")
         return {"count": saved, "total": len(df), "status": "ok"}
 
-    def update_tracking(self, trade_date: str = None):
-        """更新涨停追踪记录"""
-        if not trade_date:
-            trade_date = datetime.now().strftime("%Y%m%d")
-
-        # 获取今日涨停
-        df = self.fetch_today_limit_up(trade_date)
-        if df.empty:
-            return
-
-        db = _get_db()
-
-        for _, row in df.iterrows():
-            code = str(row.get("代码", ""))
-            name = str(row.get("名称", ""))
-            board = self._parse_board(row.get("连板数", 1))
-
-            # 检查是否已有追踪
-            existing = db.fetchone("SELECT * FROM limit_up_tracking WHERE code = %s", (code,))
-
-            if existing:
-                # 更新
-                max_board = max(existing["max_board_count"], board)
-                db.execute("""
-                    UPDATE limit_up_tracking SET
-                        latest_limit_date = %s,
-                        total_limit_days = total_limit_days + 1,
-                        max_board_count = %s,
-                        current_board_count = %s,
-                        latest_price = %s,
-                        status = CASE WHEN %s >= 2 THEN '连板中' ELSE '观察中' END,
-                        updated_at = NOW()
-                    WHERE code = %s
-                """, (trade_date, max_board, board, float(row.get("最新价", 0)), board, code))
-            else:
-                # 新追踪
-                db.execute("""
-                    REPLACE INTO limit_up_tracking 
-                    (code, name, first_limit_date, latest_limit_date,
-                     total_limit_days, max_board_count, current_board_count,
-                     first_price, latest_price, industry, status,
-                     created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-                """, (
-                    code, name, trade_date, trade_date,
-                    board, board,
-                    float(row.get("最新价", 0)), float(row.get("最新价", 0)),
-                    str(row.get("所属行业", "")),
-                    "首板" if board == 1 else "连板中"
-                ))
-
-        logger.info(f"涨停追踪更新完成")
-
     def save_industry_stats(self, trade_date: str = None):
         """保存板块涨停统计"""
         if not trade_date:
@@ -464,7 +387,6 @@ class LimitUpAnalyzer:
 
         result = self.save_today_limit_up(trade_date)
         if result.get("count", 0) > 0:
-            self.update_tracking(trade_date)
             self.save_industry_stats(trade_date)
 
         return result
@@ -493,23 +415,6 @@ class LimitUpAnalyzer:
         )
         return rows
 
-    def get_tracking_list(self, min_boards: int = 1, status: str = None) -> List[Dict]:
-        """获取追踪列表"""
-        db = _get_db()
-        query = "SELECT * FROM limit_up_tracking WHERE 1=1"
-        params = []
-
-        if min_boards > 1:
-            query += " AND max_board_count >= %s"
-            params.append(min_boards)
-        if status:
-            query += " AND status = %s"
-            params.append(status)
-
-        query += " ORDER BY max_board_count DESC, total_limit_days DESC"
-        rows = db.fetchall(query, tuple(params))
-        return rows
-
     def get_industry_stats(self, trade_date: str = None) -> List[Dict]:
         """获取行业涨停统计"""
         if not trade_date:
@@ -519,17 +424,6 @@ class LimitUpAnalyzer:
         rows = db.fetchall(
             "SELECT * FROM limit_up_industry_stats WHERE trade_date = %s ORDER BY count DESC",
             (trade_date,)
-        )
-        return rows
-
-    def get_continuous_trackers(self, min_days: int = 2) -> List[Dict]:
-        """获取多天连续涨停追踪的股票"""
-        db = _get_db()
-        rows = db.fetchall(
-            """SELECT * FROM limit_up_tracking 
-               WHERE total_limit_days >= %s 
-               ORDER BY total_limit_days DESC, max_board_count DESC""",
-            (min_days,)
         )
         return rows
 

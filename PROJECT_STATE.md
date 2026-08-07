@@ -3,10 +3,22 @@
 ## 项目概览
 - **项目**: StockAnalysis — 股票分析系统
 - **路径**: `/Users/wangyanming/workspace/StockAnalysis/`
-- **数据库**: MySQL `mysql://root:stock123@127.0.0.1:3306/stock_analysis`
+- **数据库**: MySQL，`utils/dao.py` 按项目路径自动判定生产/开发库（路径含 `StockAnalysis-dev` → 开发库 `stock_analysis_dev`；否则 → 生产库 `stock_analysis`）；凭据由 `config/db_url.local.json` 本地文件提供（版本库外、.gitignore），dao.py 按项目路径选 prod/dev；显式设 `STOCK_DB_URL` 优先
 - **预检**: `bash tests/preflight.sh`
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
+
+## 最新变更：选股日期参数化（trade_date 可重跑历史选股）（2026-08-06）
+
+- **方案**: DESIGN-20260805-06
+- **改法**: scorer.py 新增模块级日期锚点 `set_trade_date()`/`_get_today()`/`_get_today_dash()`；8 处 python `datetime.now()` 取数读到锚点 + 1 处 SQL CURDATE 改参数化（20日窗口回推锚点日）；`daily_pick_v2.pick_stocks_v2()` 签名改为 `(trade_date=None)`，内部一次性派生锚定变量 t/t_dash 并调 `set_trade_date` 锚定 scorer；涨停池/板块/补查统一改用 t；`__main__` 加可选 `--date` 便于手工回测
+- **原因**: 让选股可按历史日期重跑支撑回测（历史日选股不再拿实时价/实时大盘）；默认 None 保持取今天行为不变
+
+## 最新变更：DB 连接凭据改为本地配置文件（2026-08-05）
+
+- **方案**: DESIGN-20260805-05
+- **改法**: dao.py 新增 _load_db_url_from_local_config()，优先级 本地config > STOCK_DB_URL > 路径判定；新建 config/db_url.local.json（存 prod/dev 两套真实 URL，gitignore 排除）；密码不再写源码
+- **原因**: 改造2 把密码脱敏为 *** 但生产/dev 均无注入机制 → Access denied；环境变量方案需逐个 cron 改命令繁琐，改本地文件最省事且 cron 兼容
 
 ## 当前阶段：选股追踪页面改版（已完成）
 
@@ -19,6 +31,27 @@
 - 根因：单例连接不支持多线程复用，无连接重建机制
 - 修复方向：`utils/dao.py` 改为连接池（`DBUtils.PooledDB`）
 - QA 也缺失了并发/连续请求测试场景（已在 SKILL.md 11.5 补充）
+
+### 2026-08-05 git 结构重组 + DB 收敛 + limit_up_tracking 废弃
+
+**背景**：dev 与生产在 main 上分叉且均未 push 导致脱节，已重组：
+- 生产推 `4196eca` 到 origin/main（生产基线 `main`=4196eca）
+- 新建独立 `dev` 分支（=4196eca 起点），开发迭代在 dev 分支，main 保持生产稳定基线
+- **后续开发一律在 dev 分支进行**，main 只接受 merge 合入
+
+#### 改造2：DB 连接统一收敛 ✅ 已完成（commit `ae7d7a7`）
+- `utils/dao.py` 新增按项目路径自动判定生产/开发库（含 `StockAnalysis-dev` → 开发库，否则 → 生产库）；`STOCK_DB_URL` 显式设置最高优先；保留 unix_socket + 连接池
+- 删除 `daily_fetch.py`/`fetch_all_stocks_daily.py`/`close_task.py` 的独立 `STOCK_DB_URL` 兜底块，连库统一收敛 dao.py 单一入口
+- 方案：`docs/design/DESIGN-20260805-03`
+
+#### 改造1：废弃 limit_up_tracking 表 ✅ 已完成（待提交 dev）
+- `limit_up_analysis.py`：删 `limit_up_tracking` 建表+索引、`update_tracking()`、`run_daily_analysis` 内调用、`get_tracking_list()`、`get_continuous_trackers()`
+- `daily_pick_v2.py`：删连板梯队死代码块（`results['trackers']` 无消费方）
+- `daily_pick.py`：删除死文件（174行，零引用）
+- `web_server.py`：删 `/api/limit-up/track` 孤儿接口（保留 4 个活接口）
+- `morning_check.py`：🔗连板查询改活数据源 `daily_limit_up.board_times`（原读 `limit_up_tracking` 死表已停写，显示过期数据）
+- **注**：`limit_up_tracking` 物理表数据保留不删（仅代码废弃，符合不动生产库数据约定）；是否 drop 表另议
+- 方案：`docs/design/DESIGN-20260805-04`
 
 ### 正在处理（2026-07-16）
 
@@ -45,8 +78,9 @@
 |------|------|------|------|
 | QA Subagent | `skills/qa-subagent/SKILL.md` | 独立质量验证agent | ✅ 2026-05-28 |
 | 工程规范第11节 | `skills/engineering-rules/SKILL.md` | QA验证流程 | ✅ 2026-05-28 |
-| git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ✅ 2026-05-28 |
-| QA日志目录 | `logs/qa/` | 测试报告持久化 | ✅ 2026-05-28 |
+| git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ⚠️ 未装真hook（仅.sample模板） |
+| 项目文档 | `project-doc/文档规范.md` | 文档根路径+命名规则 | ✅ 2026-08-06 |
+| QA测试报告 | `project-doc/StockAnalysis/test/testrep-*.md` | 测试报告持久化（原 logs/qa/） | ✅ 2026-08-06 |
 
 ## 本次改动
 | 文件 | 改动 | 状态 |
@@ -61,7 +95,7 @@
 | `utils/stock_analysis_api.py` | `get_market_summary()` 内部日期改用 `get_display_date()` | ✅ 2026-07-16 |
 | `web_server.py` | `_build_picks_group_stats` 修复：收益率改为通过stock_daily的T+1/T+2数据计算，替代next_day_change字段 | ✅ 2026-07-28 |
 | `web_server.py` | **新增** `_get_nth_trade_day_global` 方法，供分组统计使用 | ✅ 2026-07-28 |
-| `docs/design/web_app.html` | 前端HTML/JS确认已无筛选控件，分组概览区块正常显示，表头11列 | ✅ 2026-07-28 |
+| `frontend/web_app.html` | 前端HTML/JS确认已无筛选控件，分组概览区块正常显示，表头11列 | ✅ 2026-07-28 |
 | `core/analyzer/close_task.py` | **新增** `_render_group_stats_table` + `_push_group_stats_image` 生成分组统计表格图片并推飞书 | ✅ 2026-07-28 |
 
 ## 已改文件 (2026-06-02)
@@ -436,8 +470,8 @@
 
 ```
 ✅ [确认] 需求范围是否明确？影响哪些文件？验收标准是什么？
-✅ [文档] docs/requirements/ 下是否有匹配的需求文档？无 → 先生成
-✅ [文档] docs/design/ 下是否有方案设计？复杂改动无 → 先生成
+✅ [文档] project-doc/<项目>/requirement/ 下是否有匹配的需求文档？无 → 先生成（规范见 project-doc/文档规范.md）
+✅ [文档] project-doc/<项目>/design/ 下是否有方案设计？复杂改动无 → 先生成
 ✅ [状态] PROJECT_STATE.md 是否已读？当前项目状态是否清晰？
 ✅ [规范] skills/engineering-rules/SKILL.md 是否已读？最新版本？
 ✅ [改后] 改完后是否会跑 tests/check_engineering.sh？
@@ -635,3 +669,16 @@
   - 监控标题：`近3日精选监控` → `近3日≥60分监控`
 - **原因**: 统一使用分数阈值筛选，与评分体系对齐
 - **验证**: Preflight 全部通过
+
+## 最新变更：大盘缓存清理 + close_task 注释清理（2026-08-06）
+
+**对应方案**: `docs/design/DESIGN-20260806-01-大盘缓存清理.md`
+
+**① 大盘缓存清理**（`core/analyzer/scorer.py` + `core/analyzer/daily_pick_v2.py`）：
+- `scorer.py`：删除模块级全局缓存 `_market_cache`；`check_market_status()` 变纯查询（每次调用查一次库，调用方自行上移）；`score_candidate()` 新增 `market=None` 参数，None 时内部取一次大盘兜底（向后兼容）
+- `daily_pick_v2.py`：L188 `score_candidate(code, name, market=market)` 显式传 key 为 0 的大盘 dict，大盘查库从「几百只 × 1 次」降为「单次查询1次」
+- **根因**: 大盘数据单次选股只需算一次，旧全局缓存是「假优化」；删除后依赖在 `daily_pick_v2` 上移为单次调用
+- **验证**: 语法检查 ✅、import 检查 ✅、check_engineering.sh ✅（除门禁脚本自身 pre-stored 缺陷项）、QA 报告 `logs/qa/20260806_143929.report.md`（结论 ✅ 通过）
+
+**② close_task.py 注释清理**（`core/analyzer/close_task.py`）：
+- 清理 2 处过时的 `limit_up_tracking` 注释残留（docstring L217 + 换手率注释 L396），与已废弃 `limit_up_tracking` 表保持一致。纯注释改动，无逻辑变更。

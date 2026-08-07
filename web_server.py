@@ -76,8 +76,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/limit-up":
             self.api_limit_up()
-        elif path == "/api/limit-up/track":
-            self.api_limit_up_track()
         elif path == "/api/limit-up/industry":
             self.api_limit_up_industry()
         elif path == "/api/limit-up/refresh":
@@ -286,14 +284,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         date_str = params.get("date", [get_display_date()])[0]
         data = zt.get_today_limit_up(date_str)
         self.send_json({"date": date_str, "count": len(data), "stocks": data})
-
-    def api_limit_up_track(self):
-        """API: 涨停追踪"""
-        params = parse_qs(urlparse(self.path).query)
-        min_boards = int(params.get("min_boards", [1])[0])
-        status = params.get("status", [None])[0]
-        data = zt.get_tracking_list(min_boards=min_boards, status=status)
-        self.send_json({"count": len(data), "stocks": data})
 
     def api_limit_up_industry(self):
         """API: 行业涨停统计 — 默认日期走 get_display_date()"""
@@ -557,7 +547,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def serve_web_app(self):
         """提供 web_app.html（真实数据接入版）"""
-        filepath = os.path.join(DATA_DIR, "docs", "design", "web_app.html")
+        filepath = os.path.join(DATA_DIR, "frontend", "web_app.html")
         if os.path.exists(filepath):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")

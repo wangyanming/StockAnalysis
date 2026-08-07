@@ -6,9 +6,18 @@
     from utils.dao import get_db, DB
     db = get_db()
 
-环境变量:
-    STOCK_DB_URL=mysql://root:***@127.0.0.1:3306/stock_analysis
-    如果未设置，默认走 MySQL (127.0.0.1:3306/stock_analysis)
+两套数据库连接串（单一真相，密码均已脱敏为 ***）：
+    生产库: mysql://root:***@127.0.0.1:3306/stock_analysis
+    开发库: mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev
+
+本地配置文件 & 环境变量 & 路径判定（优先级从高到低）:
+    1. config/db_url.local.json 存在且可解析（含对应 key）→ 按项目路径判定:
+        路径含 StockAnalysis-dev → 连开发库，否则 → 连生产库（最高优先）
+    2. STOCK_DB_URL 显式设置 → 用它
+    3. 未设置 → 按项目路径自动判定:
+        路径含 StockAnalysis-dev → 连开发库
+        否则 → 连生产库
+    4. STOCK_DB_UNIX=1 → 用 Unix Socket (/tmp/mysql.sock) 覆盖 host/port
 
 连接池:
     使用 DBUtils.PooledDB，maxconnections=10, mincached=2。
@@ -19,6 +28,7 @@
 import os
 import re
 import logging
+import json
 from typing import Any, Optional
 
 import pymysql
@@ -30,10 +40,55 @@ logger = logging.getLogger(__name__)
 # 环境变量配置
 # ─────────────────────────────────────────────
 
-# 默认 MySQL 连接（无需环境变量即可工作）
-# 密码可通过环境变量 STOCK_DB_URL 覆盖
-_DEFAULT_MYSQL_URL = "mysql://root:stock123@127.0.0.1:3306/stock_analysis"
-DB_URL = os.environ.get("STOCK_DB_URL", _DEFAULT_MYSQL_URL)
+# ── 两套数据库连接串（单一真相，密码均已脱敏为 ***）──
+# 生产库: mysql://root:***@127.0.0.1:3306/stock_analysis
+# 开发库: mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev
+_PROD_MYSQL_URL = "mysql://root:***@127.0.0.1:3306/stock_analysis"
+_DEV_MYSQL_URL = "mysql://dev_app:***@127.0.0.1:3306/stock_analysis_dev"
+
+# 项目根 = dao.py 所在目录的上一级（utils/ 上溯一级）
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 精确判定开发目录：路径中必须出现完整 dev 项目目录名 StockAnalysis-dev
+def _default_mysql_url() -> str:
+    """按项目根路径自动返回默认数据库连接串（生产库 / 开发库）"""
+    if "StockAnalysis-dev" in _PROJECT_ROOT:
+        return _DEV_MYSQL_URL
+    return _PROD_MYSQL_URL
+
+_DEFAULT_MYSQL_URL = _default_mysql_url()
+
+
+def _load_db_url_from_local_config() -> str:
+    """
+    从本地配置文件 config/db_url.local.json 读取对应 DB URL。
+
+    文件位于项目根 config/ 下（版本库外、.gitignore），存两套真实 URL：
+        db_url_prod / db_url_dev。
+    按 _PROJECT_ROOT 路径判定选 prod/dev（含 StockAnalysis-dev → dev）。
+
+    文件不存在 / JSON 解析失败 / 键缺失 → 静默回退返回空串（不抛异常）。
+    """
+    path = os.path.join(_PROJECT_ROOT, "config", "db_url.local.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    key = "db_url_dev" if "StockAnalysis-dev" in _PROJECT_ROOT else "db_url_prod"
+    url = data.get(key)
+    return url if isinstance(url, str) and url else ""
+
+
+_LOCAL_DB_URL = _load_db_url_from_local_config()
+if _LOCAL_DB_URL:
+    # 1. 本地配置文件（最高优先）
+    DB_URL = _LOCAL_DB_URL
+else:
+    # 2/3. STOCK_DB_URL 显式设置，或路径判定兜底（脱敏 ***）
+    DB_URL = os.environ.get("STOCK_DB_URL", _DEFAULT_MYSQL_URL)
 
 # 连接池参数
 _POOL_MAXCONNECTIONS = 5  # 最大连接数

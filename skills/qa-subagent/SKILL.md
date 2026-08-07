@@ -112,9 +112,10 @@ allowed-tools:
 ### Step 5：输出测试报告（必须写文件 + 发消息，缺一不可）
 
 **⚠️ 强制流程（不可跳步）：**
-1. 先执行 `write` 工具将完整报告写入 `logs/qa/<YYYYMMDD_HHMMSS>.report.md`
+1. 先执行 `write` 工具将完整报告写入 `project-doc/StockAnalysis/test/testrep-<日期>-<描述>-v<X.X>.md`
 2. 文件写入成功 **后**，用 `message` 工具发送测试结论到本channel
 3. 不允许只发消息不写文件，也不允许写完文件不发消息
+4. 写完文件后**必须回读验证**：`ls` 确认路径存在 + `cat`/`head` 确认内容写入（落盘证据写入汇报）
 
 **报告内容必须包含以下固定行（hook 依赖它做判断）：**
 ```
@@ -154,14 +155,14 @@ allowed-tools:
 **写文件使用 `write` 工具，不要用 exec：**
 ```
 write(
-  path="/Users/wangyanming/workspace/StockAnalysis/logs/qa/20260602_180257.report.md",
+  path="/Users/wangyanming/workspace/project-doc/StockAnalysis/test/testrep-20260806-描述-v1.0.md",
   content="# QA Test Report\n...\n【结论】✅ 通过"
 )
 ```
 
-**文件写入格式：**
-- 文件名：`<YYYYMMDD_HHMMSS>.report.md`（精确到秒）
-- 路径：`/Users/wangyanming/workspace/StockAnalysis/logs/qa/`
+**文件写入格式（命名规则见 `project-doc/文档规范.md`）：**
+- 文件名：`testrep-<YYYYMMDD>-<描述>-v<X.X>.md`
+- 路径：`/Users/wangyanming/workspace/project-doc/StockAnalysis/test/`
 - 如果目录不存在，用 `exec` 先创建目录
 
 ---
@@ -171,14 +172,14 @@ write(
 1. **不做代码修复**，只做验证。发现错误不能改代码，只输出报告
 2. **提交前必须跑** `check_engineering.sh` + `preflight.sh`
 3. **发现同类问题必须全项目扫描**
-4. **测试报告必须持久化**到 `logs/qa/<YYYYMMDD_HHMMSS>.report.md`（使用 `write` 工具）
+4. **测试报告必须持久化**到 `project-doc/StockAnalysis/test/testrep-<日期>-<描述>-v<X.X>.md`（使用 `write` 工具），写后回读验证
 5. **写文件是第一步，发消息是第二步**，顺序不能颠倒
 6. **结论必须明确** ✅/❌，不能是"建议"或"可能"
 7. **不依赖预设测试用例库**，每次根据功能清单动态生成
 8. 如果测试耗时较长，先输出中间状态再继续，避免超时
-9. **不需要管理 `.qa_pending` 标记文件** — hook 直接读取 logs/qa/ 下当天最新测试报告的【结论】。
-   - 报告不通过 → hook 阻止提交
-   - 报告通过 → hook 放行
+9. **不需要管理 `.qa_pending` 标记文件** — 报告结论由 step5 的【结论】固定行承载（✅/❌）。
+   - 报告不通过 → 阻止提交
+   - 报告通过 → 放行
    不需要创建或删除任何标记文件，**只管出报告即可**
 
 ## 常用工具
@@ -192,8 +193,8 @@ cd /Users/wangyanming/workspace/StockAnalysis && python3 path/to/file.py  # 模�
 
 ### 保存报告
 ```bash
-mkdir -p /Users/wangyanming/workspace/StockAnalysis/logs/qa
-echo "..." > /Users/wangyanming/workspace/StockAnalysis/logs/qa/<datetime>.report.md
+mkdir -p /Users/wangyanming/workspace/project-doc/StockAnalysis/test
+echo "..." > /Users/wangyanming/workspace/project-doc/StockAnalysis/test/testrep-$(date +%Y%m%d)-<描述>-v<X.X>.md
 ```
 
 ### 发消息
