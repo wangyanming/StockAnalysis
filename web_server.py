@@ -628,9 +628,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"error": "file not found"}, 404)
 
     def log_message(self, format, *args):
-        """自定义日志"""
-        logger = f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]} {args[1]} {args[2]}"
-        print(f"  {logger}")
+        """自定义日志（改用 format % args，兼容成功 3 参/错误 2 参/空参，避免 IndexError）"""
+        try:
+            msg = format % args if args else format
+        except Exception:
+            msg = ' '.join(str(a) for a in args)  # 极端兜底，不抛异常污染 stderr
+        print(f"  [{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
 def start_server():

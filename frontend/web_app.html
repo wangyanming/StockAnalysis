@@ -712,10 +712,15 @@ async function loadPicks() {
   try {
     const d = await fetchJSON(api('/api/picks?date=' + date));
     const picks = d.picks || [];
-    if (!picks.length) { el.innerHTML = '<div class="loading">当日无选股数据</div>'; return; }
     _pkCache = picks;
     PK_STATE.page = 1;
-    renderPicksTable();
+    // 候选列表与分组概览解耦：picks 空只影响候选列表区（显示提示+隐藏分页），
+    // 分组概览 renderGroupStats 无条件执行（其内部对空 stats 自行隐藏），不再被提前 return 吞掉。
+    if (!picks.length) {
+      el.innerHTML = '<div class="loading">当日无选股数据</div>';
+    } else {
+      renderPicksTable();
+    }
     renderGroupStats({ stats: d.group_stats || [], summary: d.summary || {} });
   } catch(e) {
     el.innerHTML = `错误: 选股数据加载失败 - ${e.message}`;
@@ -884,10 +889,7 @@ function pkChangePageSize(size) {
 }
 
 // ====== 启动 ======
-// 如果通过 web_server.py 提供，API_BASE 需要同源
-if (location.port === '8899') {
-  // 同源模式，API 直接走相对路径
-}
+// API_BASE 已由 location.origin 动态化（见上方配置段），任意端口同源，无需再按端口分支
 switchModule('overview');
 </script>
 </body>
