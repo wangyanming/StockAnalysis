@@ -8,6 +8,17 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
+## 最新变更：选股追踪页面改造（分组概览联动日期/最值个股/全窗口汇总/评分列）（2026-08-07，dev 分支）
+
+- **方案**: project-doc/StockAnalysis/design/des-20260807-选股追踪页面改造-v1.0.md（sa 方案）；需求 req-20260807-选股追踪页面改造-v1.1.md
+- **改法（web_server.py + frontend/web_app.html，未 commit）**:
+  - `_build_picks_group_stats` 签名改为 `(db, date_str=None)`；None 回退今日锚；返回改 `(result, summary)` 元组
+  - `api_picks` 传入所选 `date_str`，分组统计联动日期；`picks[]` 增补 `total_score`；send_json 增补顶层 `summary`
+  - 分组统计新增各组 `max_gain_stocks`/`max_loss_stocks`（并列数组）+ 全窗口 B+C+D 合并 `summary`（共计/盈利/胜率/均收益率 + 最值个股）
+  - 前端 `renderGroupStats`：4 KPI 卡片 + 「全部(B+C+D)」汇总行 + 最值个股列；`renderPicksTable` 名称后插「评分」列（toFixed(1)，NULL 显示 -）
+- **不动部分**: scorer.py / daily_pick_v2.py（评分落库）、>60分筛选、B/C/D 分组区间、T+1/T+2 公式、分页、其余 Tab、`#pk-date` 控件
+- **状态**: 开发完成 + 自测通过，待 commit（未 push，未 merge，未部署）
+
 ## 最新变更：选股日期参数化（trade_date 可重跑历史选股）（2026-08-06）
 
 - **方案**: DESIGN-20260805-06
