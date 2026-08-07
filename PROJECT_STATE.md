@@ -95,7 +95,7 @@
 | `utils/stock_analysis_api.py` | `get_market_summary()` 内部日期改用 `get_display_date()` | ✅ 2026-07-16 |
 | `web_server.py` | `_build_picks_group_stats` 修复：收益率改为通过stock_daily的T+1/T+2数据计算，替代next_day_change字段 | ✅ 2026-07-28 |
 | `web_server.py` | **新增** `_get_nth_trade_day_global` 方法，供分组统计使用 | ✅ 2026-07-28 |
-| `docs/design/web_app.html` | 前端HTML/JS确认已无筛选控件，分组概览区块正常显示，表头11列 | ✅ 2026-07-28 |
+| `frontend/web_app.html` | 前端HTML/JS确认已无筛选控件，分组概览区块正常显示，表头11列 | ✅ 2026-07-28 |
 | `core/analyzer/close_task.py` | **新增** `_render_group_stats_table` + `_push_group_stats_image` 生成分组统计表格图片并推飞书 | ✅ 2026-07-28 |
 
 ## 已改文件 (2026-06-02)

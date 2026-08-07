@@ -547,7 +547,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def serve_web_app(self):
         """提供 web_app.html（真实数据接入版）"""
-        filepath = os.path.join(DATA_DIR, "docs", "design", "web_app.html")
+        filepath = os.path.join(DATA_DIR, "frontend", "web_app.html")
         if os.path.exists(filepath):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
