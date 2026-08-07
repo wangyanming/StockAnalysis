@@ -124,6 +124,9 @@ body {
   gap: 14px;
   padding: 16px 18px;
 }
+.stat-grid-4 {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
 .stat-item { text-align: center; }
 .stat-item .stat-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
 .stat-item .stat-value { font-size: 22px; font-weight: 700; }
@@ -341,11 +344,8 @@ th.sortable:hover { color: var(--primary); }
 
 <script>
 // ====== 配置 ======
-// API_BASE: 同源访问 (8899端口web_server) 或用绝对路径
-// 如果当前在8899端口则同源，否则跨域请求8899
-const API_BASE = (location.port === '8899' || location.port === '443' || location.port === '80')
-  ? ''
-  : location.protocol + '//' + location.hostname + ':8899';
+// API_BASE: 动态跟随当前页面的 origin（协议+主机+端口），前端部署到任意端口均同源访问对应 web_server
+const API_BASE = location.origin;
 const LU_SORT = { field: null, order: 'asc', clicks: 0 };
 const LD_SORT = { field: null, order: 'asc', clicks: 0 };
 const LU_STATE = { page: 1, pageSize: 10 };
@@ -712,11 +712,16 @@ async function loadPicks() {
   try {
     const d = await fetchJSON(api('/api/picks?date=' + date));
     const picks = d.picks || [];
-    if (!picks.length) { el.innerHTML = '<div class="loading">当日无选股数据</div>'; return; }
     _pkCache = picks;
     PK_STATE.page = 1;
-    renderPicksTable();
-    renderGroupStats(d.group_stats || []);
+    // 候选列表与分组概览解耦：picks 空只影响候选列表区（显示提示+隐藏分页），
+    // 分组概览 renderGroupStats 无条件执行（其内部对空 stats 自行隐藏），不再被提前 return 吞掉。
+    if (!picks.length) {
+      el.innerHTML = '<div class="loading">当日无选股数据</div>';
+    } else {
+      renderPicksTable();
+    }
+    renderGroupStats({ stats: d.group_stats || [], summary: d.summary || {} });
   } catch(e) {
     el.innerHTML = `错误: 选股数据加载失败 - ${e.message}`;
   }
@@ -729,17 +734,57 @@ function fmtPctSpan(v) {
   return '<span class="' + cls + '">' + prefix + v.toFixed(2) + '%</span>';
 }
 
-function renderGroupStats(stats) {
+function fmtStocksCell(stocks) {
+  // 渲染个股极值列：只显示股票名（代码+名称），不显示收益率/亏损率数值
+  // （表格前面已有「最大收益/最大亏损」百分比列，个股列仅补名称，避免重复）
+  // 并列多只用 <br> 换行；空数组显示 '-'
+  if (!stocks || !stocks.length) return '<span style="color:#999">-</span>';
+  var parts = stocks.map(function (s) {
+    var label = (s.name || s.code || '');
+    if (s.code) label += '(' + s.code + ')';
+    return '<span style="color:#4a5bc7;font-weight:600">' + label + '</span>';
+  });
+  return parts.join('<br>');
+}
+
+function renderGroupStats(data) {
   const el = document.getElementById('pk-group-stats');
+  var stats = (data && data.stats) || [];
+  var summary = (data && data.summary) || {};
   if (!stats || !stats.length) {
     el.style.display = 'none';
     return;
   }
   el.style.display = 'block';
-  var html = '<div class="card">';
+  var html = '';
+
+  // KPI 卡片（全窗口 B+C+D 合并：共计/盈利/胜率/均收益率）
+  html += '<div class="card">';
   html += '<div class="card-title">近20日分组概览</div>';
+  html += '<div class="stat-grid stat-grid-4">';
+  html += '<div class="stat-item"><div class="stat-label">共计</div><div class="stat-value">' + (summary.count != null ? summary.count : '-') + '</div></div>';
+  html += '<div class="stat-item"><div class="stat-label">盈利</div><div class="stat-value">' + (summary.wins != null ? summary.wins : '-') + '</div></div>';
+  html += '<div class="stat-item"><div class="stat-label">胜率</div><div class="stat-value">' + (summary.win_rate != null ? summary.win_rate.toFixed(1) + '%' : '-') + '</div></div>';
+  var avgClsS = summary.avg_return != null && summary.avg_return > 0 ? 'up' : (summary.avg_return != null ? 'down' : '');
+  html += '<div class="stat-item"><div class="stat-label">均收益率</div><div class="stat-value ' + avgClsS + '">' + (summary.avg_return != null ? (summary.avg_return > 0 ? '+' : '') + summary.avg_return.toFixed(2) + '%' : '-') + '</div></div>';
+  html += '</div>';
   html += '<div class="card-body" style="overflow-x:auto">';
-  html += '<table><tr><th>分组</th><th>笔数</th><th>盈利笔数</th><th>胜率</th><th>平均收益率</th><th>最大收益</th><th>最大亏损</th></tr>';
+  html += '<table><tr><th>分组</th><th>笔数</th><th>盈利笔数</th><th>胜率</th><th>平均收益率</th><th>最大收益</th><th>最大收益个股</th><th>最大亏损</th><th>最大亏损个股</th></tr>';
+
+  // 「全部(B+C+D)」汇总行（用 summary）
+  html += '<tr style="background:#f4f6f9;font-weight:600">';
+  html += '<td>全部(B+C+D)</td>';
+  html += '<td>' + (summary.count != null ? summary.count : '-') + '</td>';
+  html += '<td>' + (summary.wins != null ? summary.wins : '-') + '</td>';
+  html += '<td>' + (summary.win_rate != null ? summary.win_rate.toFixed(1) + '%' : '-') + '</td>';
+  var sAvgCls = summary.avg_return != null && summary.avg_return > 0 ? 'up' : (summary.avg_return != null ? 'down' : '');
+  html += '<td class="' + sAvgCls + '">' + (summary.avg_return != null ? (summary.avg_return > 0 ? '+' : '') + summary.avg_return.toFixed(2) + '%' : '-') + '</td>';
+  html += '<td class="up">' + (summary.max_gain != null ? '+' + summary.max_gain.toFixed(2) + '%' : '-') + '</td>';
+  html += '<td>' + fmtStocksCell(summary.max_gain_stocks) + '</td>';
+  html += '<td class="down">' + (summary.max_loss != null ? summary.max_loss.toFixed(2) + '%' : '-') + '</td>';
+  html += '<td>' + fmtStocksCell(summary.max_loss_stocks) + '</td>';
+  html += '</tr>';
+
   for (var i = 0; i < stats.length; i++) {
     var g = stats[i];
     var avgCls = g.avg_return > 0 ? 'up' : 'down';
@@ -751,7 +796,9 @@ function renderGroupStats(stats) {
     html += '<td>' + g.win_rate + '%</td>';
     html += '<td class="' + avgCls + '">' + avgPrefix + g.avg_return.toFixed(2) + '%</td>';
     html += '<td class="up">+' + g.max_gain.toFixed(2) + '%</td>';
+    html += '<td>' + fmtStocksCell(g.max_gain_stocks) + '</td>';
     html += '<td class="down">' + g.max_loss.toFixed(2) + '%</td>';
+    html += '<td>' + fmtStocksCell(g.max_loss_stocks) + '</td>';
     html += '</tr>';
   }
   html += '</table></div></div>';
@@ -771,7 +818,7 @@ function renderPicksTable() {
   html = '<div class="card">';
   html += '<div class="card-body" style="overflow-x:auto">';
   html += '<table><tr>';
-  var headers = ['代码','名称','入选日','入选价','T+1开盘','T+1收盘','T+1涨跌幅','T+2开盘','T+2收盘','T+2涨跌幅','收益率'];
+  var headers = ['代码','名称','评分','入选日','入选价','T+1开盘','T+1收盘','T+1涨跌幅','T+2开盘','T+2收盘','T+2涨跌幅','收益率'];
   for (var i = 0; i < headers.length; i++) {
     html += '<th>' + headers[i] + '</th>';
   }
@@ -784,6 +831,7 @@ function renderPicksTable() {
     html += '<tr>';
     html += '<td>' + (p.code || '') + '</td>';
     html += '<td style="font-weight:600">' + (p.name || '') + '</td>';
+    html += '<td>' + (p.total_score != null ? p.total_score.toFixed(1) : '-') + '</td>';
     html += '<td>' + tradeDate + '</td>';
     html += '<td>' + (p.entry_price != null ? p.entry_price.toFixed(2) : '-') + '</td>';
     html += '<td>' + (p.t1_open != null ? p.t1_open.toFixed(2) : '-') + '</td>';
@@ -841,10 +889,7 @@ function pkChangePageSize(size) {
 }
 
 // ====== 启动 ======
-// 如果通过 web_server.py 提供，API_BASE 需要同源
-if (location.port === '8899') {
-  // 同源模式，API 直接走相对路径
-}
+// API_BASE 已由 location.origin 动态化（见上方配置段），任意端口同源，无需再按端口分支
 switchModule('overview');
 </script>
 </body>
