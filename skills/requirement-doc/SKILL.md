@@ -1,6 +1,6 @@
 ---
 name: requirement-doc
-description: "StockAnalysis 需求文档编写 skill：确认需求后生成/更新需求文档，存 docs/requirements/，保留历史版本"
+description: "StockAnalysis 需求文档编写 skill：确认需求后生成/更新需求文档，按 project-doc 文档规范存 requirement/，保留历史版本"
 ---
 
 # 需求文档编写
@@ -24,13 +24,13 @@ description: "StockAnalysis 需求文档编写 skill：确认需求后生成/更
 
 ### 2. 生成文档
 
-用 `assets/requirement_template.md` 填充，产出存到：
+用 `assets/requirement_template.md` 填充，产出存到（路径与命名规则见 `project-doc/文档规范.md`）：
 
 ```
-docs/requirements/<编号>-<简短名称>.md
+/Users/wangyanming/workspace/project-doc/<项目名>/requirement/req-<日期yyyyMMdd>-<需求描述>-v<X.X>.md
 ```
 
-**编号规则：** `REQ-YYYYMMDD-序号`，如 `REQ-20260527-01.md`
+**示例：** `req-20260806-大盘概率改造-v1.0.md`
 
 ### 3. 保留历史版本
 
@@ -42,12 +42,12 @@ docs/requirements/<编号>-<简短名称>.md
 
 ### 4. 存档位置
 
-所有需求文档统一放在：
+所有需求文档统一存放在 project-doc 根路径（权威规则见 `project-doc/文档规范.md`）：
 
 ```
-StockAnalysis/docs/requirements/
-├── REQ-20260526-01-集合竞价检查.md
-├── REQ-20260527-01-定时任务重构.md
+/Users/wangyanming/workspace/project-doc/StockAnalysis/requirement/
+├── req-20260526-集合竞价检查-v1.0.md
+├── req-20260527-定时任务重构-v1.0.md
 └── ...
 ```
 

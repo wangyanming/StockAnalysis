@@ -78,8 +78,9 @@
 |------|------|------|------|
 | QA Subagent | `skills/qa-subagent/SKILL.md` | 独立质量验证agent | ✅ 2026-05-28 |
 | 工程规范第11节 | `skills/engineering-rules/SKILL.md` | QA验证流程 | ✅ 2026-05-28 |
-| git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ✅ 2026-05-28 |
-| QA日志目录 | `logs/qa/` | 测试报告持久化 | ✅ 2026-05-28 |
+| git hook QA检查 | `.git/hooks/pre-commit` | 提交前检查.qa_pending标记 | ⚠️ 未装真hook（仅.sample模板） |
+| 项目文档 | `project-doc/文档规范.md` | 文档根路径+命名规则 | ✅ 2026-08-06 |
+| QA测试报告 | `project-doc/StockAnalysis/test/testrep-*.md` | 测试报告持久化（原 logs/qa/） | ✅ 2026-08-06 |
 
 ## 本次改动
 | 文件 | 改动 | 状态 |
@@ -469,8 +470,8 @@
 
 ```
 ✅ [确认] 需求范围是否明确？影响哪些文件？验收标准是什么？
-✅ [文档] docs/requirements/ 下是否有匹配的需求文档？无 → 先生成
-✅ [文档] docs/design/ 下是否有方案设计？复杂改动无 → 先生成
+✅ [文档] project-doc/<项目>/requirement/ 下是否有匹配的需求文档？无 → 先生成（规范见 project-doc/文档规范.md）
+✅ [文档] project-doc/<项目>/design/ 下是否有方案设计？复杂改动无 → 先生成
 ✅ [状态] PROJECT_STATE.md 是否已读？当前项目状态是否清晰？
 ✅ [规范] skills/engineering-rules/SKILL.md 是否已读？最新版本？
 ✅ [改后] 改完后是否会跑 tests/check_engineering.sh？
