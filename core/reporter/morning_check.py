@@ -88,11 +88,12 @@ def format_market_overview(sections: list):
         sections.append(f"  🚀 涨停{total}只")
 
     # 热点 — 从 sector_performance 按板块取前3（不同名）
+    # 防御：用 db.fetchall 替代 db.execute().fetchall()，规避空结果返回空 tuple 的踩坑（见 v1.2 §1.5）
     seen_sectors = set()
     sector_items = []
-    for s in db.execute(
+    for s in db.fetchall(
         "SELECT sector_name, change_pct, rise_count, fall_count FROM sector_performance WHERE record_date=%s AND rank_type='all' ORDER BY change_pct DESC LIMIT 10",
-        (snap_date,)).fetchall():
+        (snap_date,)):
         nm = s['sector_name']
         if nm not in seen_sectors:
             seen_sectors.add(nm)
@@ -104,9 +105,10 @@ def format_market_overview(sections: list):
         sections.append(f"  🏭 热点: {' / '.join(sector_items)}")
 
     # 连板
-    high_rows = db.execute(
+    # 防御：用 db.fetchall 替代 db.execute().fetchall()，规避空结果返回空 tuple 的踩坑（见 v1.2 §1.5）
+    high_rows = db.fetchall(
         "SELECT name, board_times FROM daily_limit_up WHERE trade_date=%s AND board_times>=3 ORDER BY board_times DESC, seal_first_time ASC LIMIT 5",
-        (trade_date,)).fetchall()
+        (trade_date,))
     if high_rows:
         board_strs = [f"{r['name']}{r['board_times']}板" for r in high_rows]
         sections.append(f"  🔗 连板: {' | '.join(board_strs)}")
@@ -251,43 +253,37 @@ def format_today_picks(sections: list):
     from utils.dao import get_db
     db = get_db()
 
-    # 从 daily_picks 表获取最新交易日选股结果
-    last_trade_dates = db.execute(
-        "SELECT DISTINCT trade_date FROM daily_picks WHERE LENGTH(trade_date)=8 ORDER BY trade_date DESC LIMIT 1")
-    row = last_trade_dates.fetchone()
-    if row:
-        trade_date = row['trade_date']
+    # ===== v1.2：盘前候选股取数口径修正（des-20260810 v1.2 §1.4）=====
+    # 「上一个交易日」= 日历年历真实交易日（stock_daily 真实行情，周末/法定休市无数据）
+    # 禁止用 daily_picks 的 MAX(trade_date)（那是「最近有选股记录日」，口径错误）
+    # 禁止 WHERE ... AND total_score>=60 去取最近高分日（会回跳更早交易日）
+    # 只取该真实交易日当天 total_score>=60；该日无 ≥60 → 空 list → 「今日无可关注候选股」
+    # 绝不回跳补更早交易日；彻底弃用 is_pick=1 与 rank<=5 兜底分支
+    cur_date = datetime.now().strftime('%Y%m%d')  # 查询基准日（今日/盘前日期），无横杠对齐 stock_daily.trade_date
+    prev = db.fetchone(
+        "SELECT MAX(trade_date) AS prev_date FROM stock_daily WHERE trade_date < %s",
+        (cur_date,))
+    if prev and prev.get('prev_date'):
+        prev_date = prev['prev_date']  # 日历年历真实交易日（如周一盘前→上周五 20260807）
         try:
-            dt = datetime.strptime(trade_date, '%Y%m%d')
+            dt = datetime.strptime(str(prev_date), '%Y%m%d')
             pick_label = f'{dt.month}月{dt.day}日'
         except Exception:
-            pick_label = trade_date
-
-        # 取精选推荐（is_pick=1）= 涨停回踩TOP5 + 区间潜伏TOP5
-        cur = db.execute(
-            'SELECT code, name, total_score, data_tag FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
-            (trade_date,))
-        picks = cur.fetchall()
-
-        # 如果 is_pick 标记的部分不足5只，用 rank<=5 补（兜底）
-        if len(picks) < 5:
-            seen = set(p['code'] for p in picks)
-            cur2 = db.execute(
-                'SELECT code, name, total_score, data_tag FROM daily_picks WHERE trade_date=%s AND `rank`<=5 ORDER BY `rank`',
-                (trade_date,))
-            for r in cur2.fetchall():
-                if r['code'] not in seen:
-                    seen.add(r['code'])
-                    picks.append(r)
-
+            pick_label = str(prev_date)
+        # 只取该真实交易日当天 >=60 的个股；db.fetchall + list() 规避空 tuple 崩溃
+        picks = list(db.fetchall(
+            'SELECT code, name, total_score, data_tag FROM daily_picks '
+            'WHERE trade_date=%s AND total_score>=60 '
+            'ORDER BY total_score DESC',
+            (str(prev_date),)))
         if picks:
-            sections.append(f"📋 **今日关注（{len(picks)}只）：**")
+            sections.append(f"📋 **今日关注（{len(picks)}只，{pick_label}）：**")
             for p in picks:
                 tag = p.get('data_tag', '')
                 tag_str = f' [{tag}]' if tag else ''
                 sections.append(f"  {p['name']}({p['code']}) {p['total_score']}分{tag_str}")
         else:
-            sections.append(f"📋 候选股待更新")
+            sections.append(f"📋 今日无可关注候选股")
     else:
         sections.append(f"📋 候选股数据待更新")
 

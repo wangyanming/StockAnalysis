@@ -17,28 +17,22 @@ from datetime import datetime, timedelta
 
 from utils.logger import setup_logger
 logger = setup_logger("intraday_monitor")
-_market_summary_cache = None
-_market_summary_cache_time = 0
 
 def _get_market_summary_cached():
-    """缓存实时市场汇总 - 一次性调用 StockDataFetcher.get_market_summary()"""
-    global _market_summary_cache, _market_summary_cache_time
-    now = time.time()
-    if _market_summary_cache is not None and now - _market_summary_cache_time < 30:
-        return _market_summary_cache
+    """盘中实时市场汇总 - 每次直拉同花顺，不做缓存、不判断 TTL（v1.3：去缓存层）。
+    des-20260810 v1.3：去掉 v1.2 §2.4.2 的 30s 缓存（前置 is not None 导致失败 None 标记不生效 + 低频场景缓存无意义）。"""
     from utils.stock_analysis_api import StockDataFetcher
     f = StockDataFetcher()
     try:
-        ms = f.get_market_summary()
-        if ms and ms.get('up_count', 0) > 0:
-            logger.info(f'盘中实时涨跌家数: 涨{ms["up_count"]} 跌{ms["down_count"]}')
-
-            _market_summary_cache = ms
-            _market_summary_cache_time = now
-            return ms
+        rt = f.get_market_summary_realtime(retries=3, retry_interval=2.5)
+        if rt and rt.get('up_count', 0) > 0:
+            logger.info(f'盘中实时涨跌家数: 涨{rt["up_count"]} 跌{rt["down_count"]}')
+            return rt
+        logger.warning('实时市场汇总 3 次失败: 本次不显示涨跌家数/成交额')
+        return None
     except Exception as e:
-        logger.warning(f'实时市场汇总失败: {e}')
-    return None
+        logger.warning(f'实时市场汇总异常: {e}')
+        return None
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -67,7 +61,8 @@ def fetch_index(idx_code: str):
 
 
 def fetch_realtime_market_summary() -> dict:
-    """盘中实时涨跌家数+成交额 - 仅用实时API,拿不到就返回空"""
+    """盘中实时涨跌家数+成交额 - 仅用实时API,取不到显示占位符(不查DB不返回昨日旧值)
+    des-20260810 v1.2 §2.4.3：3次失败返回占位符-d"""
     try:
         d = _get_market_summary_cached()
         if d and d.get('up_count', 0) > 0:
@@ -79,20 +74,23 @@ def fetch_realtime_market_summary() -> dict:
             }
     except Exception as e:
         logger.warning(f'实时市场汇总获取失败: {e}')
-    return {'rise': '?', 'fall': '?', 'flat': 0, 'total_yi': 0}
+    # 3 次失败 → 占位符（数据获取失败），不返回 8/7 旧值
+    return {'rise': '—', 'fall': '—', 'flat': 0, 'total_yi': '数据获取失败'}
 
 
 def fetch_amount_total_realtime() -> dict:
     """成交额 - 复用 fetch_realtime_market_summary(含实时+回退)"""
     ms = fetch_realtime_market_summary()
     total_yi = ms.get('total_yi', 0)
-    # 前日比较
+    # 前日比较(跨周末): 取“最近一个有 amount 的真实交易日”做昨日对比
+    # des-20260810 v1.2 §2.4.4：不用“今天-1天”，改查 sector_performance 最近一个有成交额的真实交易日(跳过周末/长假)
     from utils.dao import get_db
     db = get_db()
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     sp = db.fetchone(
-        "SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
-        (yesterday,))
+        "SELECT record_date, SUM(amount) as total_amt FROM sector_performance "
+        "WHERE record_date < %s AND rank_type='all' AND amount > 0 "
+        "GROUP BY record_date ORDER BY record_date DESC LIMIT 1",
+        (datetime.now().strftime('%Y-%m-%d'),))
     prev_yi = float(sp['total_amt']) / 1e8 if sp and sp['total_amt'] else -1
     diff_yi = total_yi - prev_yi if prev_yi > 0 else None
     return {'total_yi': total_yi, 'yesterday_same_yi': prev_yi if prev_yi > 0 else 0, 'diff_yi': diff_yi}
@@ -454,7 +452,7 @@ def run():
         logger.warning(f'获取站内实时成交额失败: {e}')
 
     # ── 盘面摘要（涨跌家数 + 成交额 + 资金流）──
-    # 实时数据：优先 push2；失败则降级为 db 缓存
+    # 实时数据：优先 push2；缺失项实时直拉同花顺补（v1.3 已去 DB 缓存层）
     rise, fall, flat, amt, main_flow, retail_flow = None, None, None, None, None, None
     try:
         from core.fetcher.push2_market import fetch_push2_market_data
@@ -471,7 +469,7 @@ def run():
     if amt is None and realtime_amt:
         amt = realtime_amt
 
-    # 如果 push2 没有涨跌家数，从 db 缓存补
+    # 如果 push2 没有涨跌家数，实时直拉同花顺补（v1.3 去缓存）
     if rise is None:
         try:
             ms = _get_market_summary_cached()
@@ -482,7 +480,7 @@ def run():
                 if amt is None and ms.get('total_amount'):
                     amt = ms['total_amount'] / 1e8
         except Exception as e:
-            logger.warning(f'市场汇总缓存获取失败: {e}')
+            logger.warning(f'市场汇总实时数据获取失败: {e}')
 
     # 输出盘面摘要行
     if rise is not None and fall is not None:

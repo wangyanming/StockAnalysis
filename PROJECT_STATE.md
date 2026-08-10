@@ -8,6 +8,14 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
+## 最新变更：v1.2 盘中盘前取数修复 + v1.3 去盘中市场汇总缓存层（2026-08-10）
+
+- **QA**: 已通过（testrep-凭证-盘中盘前取数修复-v1.2/v1.3）；pre-commit hook 认 project-doc/StockAnalysis/test/ 新路径
+- **改法（core/reporter/morning_check.py + core/reporter/intraday_monitor.py + utils/stock_analysis_api.py）**:
+  - **morning_check（Bug1 候选股口径）**: 盘前候选股改 `stock_daily` 真实交易日 + `total_score>=60` + 无则显示无可关注；弃用 `is_pick`/`rank<=5` 口径；修 `trade_date` 格式为 `%Y%m%d`
+  - **intraday_monitor（Bug2 实时取数 + 去缓存层）**: 盘中涨跌家数/成交额改实时同花顺直采（`get_market_summary_realtime` 3 次失败不显示）；去除 DB 兜底与 30s 缓存层（v1.3）
+  - **stock_analysis_api**: 新增 `get_market_summary_realtime()`（只读不写库）
+- **状态**: QA v1.2/v1.3 通过，已 commit + push 到 origin/main
 ## 最新变更：选股追踪页 3 处缺陷统一修复（2026-08-07，dev 分支）
 
 - **方案**: project-doc/StockAnalysis/design/des-20260807-选股追踪页缺陷修复-v1.0.md（sa 统一修复方案）；需求 req-20260807-选股追踪页面改造-v1.1.md
