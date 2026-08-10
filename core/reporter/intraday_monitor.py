@@ -21,23 +21,31 @@ _market_summary_cache = None
 _market_summary_cache_time = 0
 
 def _get_market_summary_cached():
-    """缓存实时市场汇总 - 一次性调用 StockDataFetcher.get_market_summary()"""
+    """盘中实时涨跌家数/成交额 - 同花顺直采(重试3次), 3次失败不显示, 无 DB 兜底"""
     global _market_summary_cache, _market_summary_cache_time
     now = time.time()
-    if _market_summary_cache is not None and now - _market_summary_cache_time < 30:
+    # 30s TTL：实时成功时命中缓存；失败时命中 None 标记，避免高频反复打接口
+    if now - _market_summary_cache_time < 30:
         return _market_summary_cache
     from utils.stock_analysis_api import StockDataFetcher
     f = StockDataFetcher()
     try:
-        ms = f.get_market_summary()
-        if ms and ms.get('up_count', 0) > 0:
-            logger.info(f'盘中实时涨跌家数: 涨{ms["up_count"]} 跌{ms["down_count"]}')
-
-            _market_summary_cache = ms
+        # 盘中实时：同花顺直采，重试3次（内部自带 retry，失败返回 {}），只读不写库
+        rt = f.get_market_summary_realtime(retries=3, retry_interval=2.5)
+        if rt and rt.get('up_count', 0) > 0:
+            _market_summary_cache = rt
             _market_summary_cache_time = now
-            return ms
+            logger.info(f'盘中实时涨跌家数: 涨{rt["up_count"]} 跌{rt["down_count"]}')
+            return rt
+        # 3 次仍失败 → 清缓存返回 None，调用方不显示（无 DB 兜底）
+        _market_summary_cache = None
+        _market_summary_cache_time = now
+        logger.warning('实时市场汇总 3 次失败: 本次不显示涨跌家数/成交额')
+        return None
     except Exception as e:
-        logger.warning(f'实时市场汇总失败: {e}')
+        logger.warning(f'实时市场汇总异常: {e}')
+        _market_summary_cache = None
+        _market_summary_cache_time = now
     return None
 
 
@@ -83,16 +91,17 @@ def fetch_realtime_market_summary() -> dict:
 
 
 def fetch_amount_total_realtime() -> dict:
-    """成交额 - 复用 fetch_realtime_market_summary(含实时+回退)"""
+    """成交额 - 复用 fetch_realtime_market_summary(实时直采,3次失败不显示)"""
     ms = fetch_realtime_market_summary()
     total_yi = ms.get('total_yi', 0)
-    # 前日比较
+    # 前日比较：取 今天之前最近一个有成交额数据的真实交易日（跳过周末/长假，而非简单 yesterday）
     from utils.dao import get_db
     db = get_db()
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     sp = db.fetchone(
-        "SELECT SUM(amount) as total_amt FROM sector_performance WHERE record_date=%s AND rank_type='all'",
-        (yesterday,))
+        "SELECT record_date, SUM(amount) as total_amt FROM sector_performance "
+        "WHERE record_date < %s AND rank_type='all' AND amount > 0 "
+        "GROUP BY record_date ORDER BY record_date DESC LIMIT 1",
+        (datetime.now().strftime('%Y-%m-%d'),))
     prev_yi = float(sp['total_amt']) / 1e8 if sp and sp['total_amt'] else -1
     diff_yi = total_yi - prev_yi if prev_yi > 0 else None
     return {'total_yi': total_yi, 'yesterday_same_yi': prev_yi if prev_yi > 0 else 0, 'diff_yi': diff_yi}

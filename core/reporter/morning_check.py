@@ -90,9 +90,9 @@ def format_market_overview(sections: list):
     # 热点 — 从 sector_performance 按板块取前3（不同名）
     seen_sectors = set()
     sector_items = []
-    for s in db.execute(
+    for s in db.fetchall(
         "SELECT sector_name, change_pct, rise_count, fall_count FROM sector_performance WHERE record_date=%s AND rank_type='all' ORDER BY change_pct DESC LIMIT 10",
-        (snap_date,)).fetchall():
+        (snap_date,)):
         nm = s['sector_name']
         if nm not in seen_sectors:
             seen_sectors.add(nm)
@@ -104,9 +104,9 @@ def format_market_overview(sections: list):
         sections.append(f"  🏭 热点: {' / '.join(sector_items)}")
 
     # 连板
-    high_rows = db.execute(
+    high_rows = db.fetchall(
         "SELECT name, board_times FROM daily_limit_up WHERE trade_date=%s AND board_times>=3 ORDER BY board_times DESC, seal_first_time ASC LIMIT 5",
-        (trade_date,)).fetchall()
+        (trade_date,))
     if high_rows:
         board_strs = [f"{r['name']}{r['board_times']}板" for r in high_rows]
         sections.append(f"  🔗 连板: {' | '.join(board_strs)}")
@@ -251,45 +251,41 @@ def format_today_picks(sections: list):
     from utils.dao import get_db
     db = get_db()
 
-    # 从 daily_picks 表获取最新交易日选股结果
-    last_trade_dates = db.execute(
-        "SELECT DISTINCT trade_date FROM daily_picks WHERE LENGTH(trade_date)=8 ORDER BY trade_date DESC LIMIT 1")
-    row = last_trade_dates.fetchone()
-    if row:
-        trade_date = row['trade_date']
+    today = datetime.now().strftime('%Y%m%d')
+
+    # 取"上一个交易日"：daily_picks 中今天之前、且存在 total_score>=60 候选的最远最近交易日。
+    # 直接取 MAX(trade_date) < 今日 可能命中休市/周末假数据（曾有 8/9 周日照跑的假选股，已清理，
+    # 但代码层依旧防御）：故限定当天存在 total_score>=60 记录，确保取到的是真实有效候选日。
+    prev = db.fetchone(
+        "SELECT MAX(trade_date) AS prev_date FROM daily_picks "
+        "WHERE trade_date < %s AND LENGTH(trade_date)=8 "
+        "AND total_score>=60",
+        (today,))
+    if prev and prev.get('prev_date'):
+        prev_date = prev['prev_date']
         try:
-            dt = datetime.strptime(trade_date, '%Y%m%d')
+            dt = datetime.strptime(prev_date, '%Y%m%d')
             pick_label = f'{dt.month}月{dt.day}日'
         except Exception:
-            pick_label = trade_date
+            pick_label = prev_date
 
-        # 取精选推荐（is_pick=1）= 涨停回踩TOP5 + 区间潜伏TOP5
-        cur = db.execute(
-            'SELECT code, name, total_score, data_tag FROM daily_picks WHERE trade_date=%s AND is_pick=1 ORDER BY `rank`',
-            (trade_date,))
-        picks = cur.fetchall()
-
-        # 如果 is_pick 标记的部分不足5只，用 rank<=5 补（兜底）
-        if len(picks) < 5:
-            seen = set(p['code'] for p in picks)
-            cur2 = db.execute(
-                'SELECT code, name, total_score, data_tag FROM daily_picks WHERE trade_date=%s AND `rank`<=5 ORDER BY `rank`',
-                (trade_date,))
-            for r in cur2.fetchall():
-                if r['code'] not in seen:
-                    seen.add(r['code'])
-                    picks.append(r)
+        # 候选股 = 上一个交易日 total_score>=60 的全部个股（彻底替代精选标记，不再有 rank 兜底）
+        # （按总得分降序，>=60 即今日关注候选，无需额外 topN 兜底）
+        picks = list(db.fetchall(
+            'SELECT code, name, total_score, data_tag FROM daily_picks '
+            'WHERE trade_date=%s AND total_score>=60 ORDER BY total_score DESC',
+            (prev_date,)))
 
         if picks:
-            sections.append(f"📋 **今日关注（{len(picks)}只）：**")
+            sections.append(f"📋 **今日关注（{pick_label} {len(picks)}只）：**")
             for p in picks:
                 tag = p.get('data_tag', '')
                 tag_str = f' [{tag}]' if tag else ''
                 sections.append(f"  {p['name']}({p['code']}) {p['total_score']}分{tag_str}")
         else:
-            sections.append(f"📋 候选股待更新")
+            sections.append("  ／ 今日无可关注候选股")
     else:
-        sections.append(f"📋 候选股数据待更新")
+        sections.append("  ／ 今日无可关注候选股")
 
     sections.append("")
     sections.append("⚙️ **操作要点：**")
