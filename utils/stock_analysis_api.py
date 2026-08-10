@@ -729,36 +729,33 @@ class StockDataFetcher:
 
     def get_market_summary_realtime(self, retries: int = 3, retry_interval: float = 2.5) -> Dict:
         """
-        盘中实时市场汇总：直接汇总同花顺 stock_board_industry_summary_ths() 全量
-        （约 90 个行业板块）的上涨家数/下跌家数/总成交额。
+        盘中实时市场汇总：直接汇总同花顺 stock_board_industry_summary_ths() 全量 90 板块
+        的上涨家数/下跌家数/总成交额（已实测盘中可取：涨3502/跌1941）。
+        只读不写库 —— 不得污染 sector_performance 当日收盘快照（绝不 UPDATE/INSERT）。
+        重试 retries 次（默认3），每次间隔 retry_interval 秒（建议2-3s）。
+        3 次仍失败返回 {} → 由调用方决定不显示。
 
-        特性（SA 方案 des-20260810 v1.1 · Bug2 修订2）：
-        - 只读不写库：仅计算汇总返回，绝不 UPDATE/INSERT sector_performance，不污染收盘快照。
-        - 重试 retries 次（默认 3），每次间隔 retry_interval 秒（默认 2.5s）。
-        - retries 次仍失败返回 {}，由调用方决定不显示涨跌家数/成交额。
+        des-20260810 v1.2 §2.4.1
         """
-        if not HAS_AKSHARE:
-            logger.warning('实时市场汇总不可用: akshare 未安装')
-            return {}
+        import akshare as ak
         last_err = None
         for attempt in range(1, retries + 1):
             try:
                 df = ak.stock_board_industry_summary_ths()
-                if df is not None and not df.empty and '上涨家数' in df.columns and '下跌家数' in df.columns:
+                if df is not None and not df.empty and '涨跌幅' in df.columns \
+                   and '上涨家数' in df.columns:
+                    # 同花顺列：上涨家数/下跌家数/总成交额(单位:亿)，上涨家数×板块数汇总得两市涨家数
                     rise = int(df['上涨家数'].astype(float).sum())
                     fall = int(df['下跌家数'].astype(float).sum())
                     amt_col = '总成交额' if '总成交额' in df.columns else None
-                    # 同花顺板块 总成交额 单位为亿，×1e8 转为元（与 fetch_sector_full_data 口径一致）
+                    # 总成交额单位=亿 → 元 ×1e8（与 fetch_sector_full_data 同源换算一致）
                     amt = (float(df[amt_col].astype(float).sum()) * 1e8
                            if amt_col else 0.0)
                     return {
-                        'up_count': rise,
-                        'down_count': fall,
-                        'flat_count': 0,
-                        'total_amount': amt,
-                        'source': 'realtime_ths',
+                        'up_count': rise, 'down_count': fall, 'flat_count': 0,
+                        'total_amount': amt, 'source': 'realtime_ths',
                     }
-                last_err = 'empty 或列缺失'
+                last_err = 'empty或列缺失'
             except Exception as e:
                 last_err = e
                 logger.warning(f'同花顺实时市场汇总第{attempt}次失败: {e}')
