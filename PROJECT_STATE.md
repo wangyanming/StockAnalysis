@@ -13,6 +13,7 @@
 - **动作**: 所有 skills（design-doc / engineering-rules / qa-subagent / requirement-doc / task-router-plugin）从本项目 `skills/` 迁移到 workspace 根 `/Users/wangyanming/workspace/skills/`，公用一套（OpenClaw `skills.load.extraDirs` 全局加载），本仓库 `skills/` 已 git 排除（.gitignore 纳入）不再跟踪
 - **task-router-plugin**: 加载路径改为 `/Users/wangyanming/workspace/skills/task-router-plugin`（openclaw.json `plugins.load.paths`）；工作区仍指向本项目，`projectPathMarker=StockAnalysis/` 不变
 - **回滚**: 备份在 `/Users/wangyanming/workspace/.skills-backup-20260810/`
+- **状态**: 已落地 ✅ —— 生产合并 `433c377`（merge origin/dev）+ push main；dev 推 `d31751c` + push dev；两仓库 `skills/` 均 git 排除（git ls-files skills 为空）且物理副本已删；网关已重启生效（监听 18789），所有 agent 从 `/Users/wangyanming/workspace/skills/` 加载（含履约契约）
 
 ## 最新变更：v1.2 盘中盘前取数修复 + v1.3 去盘中市场汇总缓存层（2026-08-10）
 
