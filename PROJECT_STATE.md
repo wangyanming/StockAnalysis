@@ -8,6 +8,12 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
+## 最新变更：skills 迁移到 workspace 根（2026-08-10）
+
+- **动作**: 所有 skills（design-doc / engineering-rules / qa-subagent / requirement-doc / task-router-plugin）从本项目 `skills/` 迁移到 workspace 根 `/Users/wangyanming/workspace/skills/`，公用一套（OpenClaw `skills.load.extraDirs` 全局加载），本仓库 `skills/` 已 git 排除（.gitignore 纳入）不再跟踪
+- **task-router-plugin**: 加载路径改为 `/Users/wangyanming/workspace/skills/task-router-plugin`（openclaw.json `plugins.load.paths`）；工作区仍指向本项目，`projectPathMarker=StockAnalysis/` 不变
+- **回滚**: 备份在 `/Users/wangyanming/workspace/.skills-backup-20260810/`
+
 ## 最新变更：v1.2 盘中盘前取数修复 + v1.3 去盘中市场汇总缓存层（2026-08-10）
 
 - **QA**: 已通过（testrep-凭证-盘中盘前取数修复-v1.2/v1.3）；pre-commit hook 认 project-doc/StockAnalysis/test/ 新路径

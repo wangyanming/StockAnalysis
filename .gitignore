@@ -51,3 +51,4 @@ closing_review_*.txt
 
 # 本地 DB 连接凭据（密码不进版本库）
 config/db_url.local.json
+skills/
