@@ -51,6 +51,24 @@ description: "StockAnalysis 需求文档编写 skill：确认需求后生成/更
 └── ...
 ```
 
+## 交付履约契约（强制）
+
+> 依据总规范 `engineering-rules/SKILL.md` 第 6.5 节「文档交付履约契约」。
+
+### 需求文档交付 = 真实落盘 + exec 验证，缺一不可
+
+1. **真实落盘**：(按第 4 节路径)用 `write` 工具把需求文档实际写入：
+   `/Users/wangyanming/workspace/project-doc/StockAnalysis/requirement/req-<日期yyyyMMdd>-<需求描述>-v<X.X>.md`
+2. **exec 验证**：执行 `ls -l <绝对路径>` + `wc -c <绝对路径>` 确认文件存在 + 字节数符合预期。
+3. **回复必须含**以下三项（缺任一即视为未交付）：
+   ```
+   【落盘路径】<绝对路径>
+   【文件字节数】<wc -c 实际输出值>
+   【落盘验证】<ls -l / wc -c 原始输出>
+   ```
+
+🚨 **禁止只回「开始写 / 需求写好了」就宣告完成**。未实际落盘 + 文件系统可见 = 未交付。主 agent 会 exec 复核，不符即打回重做。
+
 ## 触发条件
 
 以下场景需要写需求文档：
