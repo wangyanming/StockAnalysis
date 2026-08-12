@@ -9,7 +9,7 @@
   1. 筹码结构（25分）— 上方有没有套牢盘？是不是低位启动？
   2. 资金接力（25分）— 换手是否健康？有没有接力气质？
   3. 板块环境（20分）— 板块有没有合力？是不是主线？
-  4. 趋势位置（20分）— 均线排列？回调到支撑了吗？
+  4. 趋势位置（14分）— 均线排列？回调到支撑了吗？（v6.1 由 20 分调整为 14 分）
   5. 大盘安全垫（10分）— 明天还有多少安全空间？
   风险扣分（-15分）
 
@@ -59,7 +59,7 @@ MAX_SCORES = {
     'chip_structure': 25,
     'momentum': 25,
     'sector_environment': 20,
-    'trend_position': 20,
+    'trend_position': 14,   # v6.1：20→14（删除近期涨跌节奏，阶段二仅剩 均线8+距MA20 6）
     'market_safety': 10,
 }
 
@@ -516,7 +516,7 @@ def score_sector_environment(code: str, name: str) -> Tuple[int, list]:
 
 def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     """
-    趋势位置评分（20分）
+    趋势位置评分（14分，v6.1：删除阶段二④近期涨跌节奏，满分 20→14）
 
     v6.0 改写：先判大方向（硬开关），再给细分评分。
 
@@ -529,7 +529,7 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     阶段二：通过后再评分
     - 均线排列（8分）
     - 距MA20位置（6分）
-    - 近期涨跌节奏（6分）
+    （v6.1 已删除原④近期涨跌节奏 ±6 因子；满分 8+6=14）
 
     数据源：stock_daily 近30日K线
     """
@@ -663,31 +663,14 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
                 score += 3
                 details.append(f'跌破MA20等企稳(+3)')
 
-        # ④ 近期涨跌节奏（6分）
-        if len(klines) >= 10:
-            recent_chg = [k['change_pct'] for k in klines[:10] if k['change_pct']]
-            avg_chg = sum(recent_chg) / len(recent_chg) if recent_chg else 0
-
-            if avg_chg > 3:
-                score -= 4
-                details.append(f'连续大涨均值{avg_chg:+.1f}%(-4)')
-            elif avg_chg > 1:
-                score -= 1
-                details.append(f'小幅上涨均值{avg_chg:+.1f}%')
-            elif avg_chg > -1:
-                score += 3
-                details.append(f'横盘蓄力均值{avg_chg:+.1f}%(+3)')
-            elif avg_chg > -3:
-                score += 5
-                details.append(f'缩量回调均值{avg_chg:+.1f}%(+5)')
-            else:
-                score -= 3
-                details.append(f'持续下跌均值{avg_chg:+.1f}%(-3)')
+        # ④ v6.1: 近期涨跌节奏因子已删除（G3 去节奏定稿），避免与位置评估联合表节奏打分重复。
+        # 原 ±6（a+5/b+6/c−1/d−3/e−6）计分段整体移除；节奏分档逻辑 `_classify_rhythm`
+        # 由位置评估 `_score_position_in_range` 内部现算（rhythm=None 分支），此处不再复用。
 
     except Exception as e:
         logger.warning(f'趋势评分{code}失败: {e}')
 
-    score = max(-10, min(20, score))
+    score = max(-10, min(14, score))   # v6.1：趋势封顶 20→14（去节奏后阶段二仅剩 均线8+距MA20 6）
     return score, details
 
 
@@ -817,49 +800,98 @@ def build_candidate_pool(today_up: list = None) -> List[Dict]:
 # 6. 位置评分（补充维度，作为 bonus 加在总分上）
 # ══════════════════════════════════════════════════════════════
 
-def _score_position_in_range(code: str, q: dict) -> int:
+# 位置 × 涨跌节奏 联合赋分表（des-20260811-位置评估因子联合调分 v1.1 §3.2）
+# 满分15。解决「低位无脑+15」与「涨跌节奏对回调/下跌惩罚」的伪冲突。
+# 括号内为交叉格样本量（小样本≤30为保守值）。
+_POSITION_RHYTHM_TABLE = {
+    #           c横盘   b小涨   d回调   a连涨   e下跌
+    ('低位', 'c'): 15,  ('低位', 'b'): 10,  ('低位', 'd'): 5,
+    ('低位', 'a'): 8,   ('低位', 'e'): 2,
+    ('中位', 'c'): 3,   ('中位', 'b'): 8,   ('中位', 'd'): 1,
+    ('中位', 'a'): 3,   ('中位', 'e'): 2,
+    ('偏高', 'c'): 2,   ('偏高', 'b'): 5,   ('偏高', 'd'): 0,
+    ('偏高', 'a'): 0,   ('偏高', 'e'): 0,
+    ('极高位', 'c'): 0, ('极高位', 'b'): 2, ('极高位', 'd'): 0,
+    ('极高位', 'a'): 0, ('极高位', 'e'): 0,
+}
+
+# 近10日均涨幅不足/数据缺失时的位置单因子兜底分（v1.1 §4.4）
+# 位置分档阈值：<30% 低位 / 30~60% 中位 / 60~85% 偏高 / ≥85% 极高位
+_POSITION_FALLBACK = {'低位': 15, '中位': 8, '偏高': 3, '极高位': 0}
+
+
+def _classify_rhythm(avg_chg: float) -> str:
+    """近10日均涨幅 → a连涨/b小涨/c横盘/d回调/e下跌。
+    阈值与回测口径一致（des v1.1 §4.3），供位置联合赋分复用。"""
+    if avg_chg > 3:    return 'a'  # a 连续大涨
+    if avg_chg > 1:    return 'b'  # b 小幅上涨
+    if avg_chg > -1:   return 'c'  # c 横盘蓄力
+    if avg_chg > -3:   return 'd'  # d 缩量回调
+    return 'e'                       # e 持续下跌
+
+
+def _score_position_in_range(code: str, q: dict, rhythm: str = None) -> int:
     """
-    位置评分（0~15分）：判断当前价格在20日区间的位置。
-    
+    位置评估（0~15分，v1.1 细化）：位置 × 涨跌节奏 联合赋分。
+
+    背景（des-20260811-位置评估因子联合调分 v1.1）：
+    - v6.0 原逻辑按位置4档无脑加分，把「低位横盘(强)」与「低位回调(弱)」
+      混为一谈全给 +15，与涨跌节奏因子对回调/下跌的惩罚打架（伪冲突）。
+    - v1.1 改为查 位置×节奏 联合赋分表，让位置评估与涨跌节奏对齐。
+
     逻辑：
-    - 取近20日（含当日）最高价和最低价，计算当前价在区间百分位
-    - <30% 低位 → +15
-    - 30~60% 中位 → +8
-    - 60~85% 偏高 → +3
-    - >85% 极高位 → 0（不扣分，已通过风险扣分/趋势扣分惩罚）
-    
-    目的：解决"高分票都在追涨位"的问题，让低位的票获得加分补偿。
+    - 取近20根K线，计算当前价在20日区间百分位 → 位置分档（低位/中位/偏高/极高位）
+    - 取近10根 change_pct 均值 → 节奏分档（a/b/c/d/e）
+      - rhythm 参数缺省时内部现算；外部传入（如复用 score_trend_position）则直接用
+    - 按 _POSITION_RHYTHM_TABLE 查表返回 0~15 分
+      - 近10日无 change_pct / 不足10根 → 无法判节奏，走位置单因子兜底
+        （低位15/中位8/偏高3/极高位0，见 §4.4）
+      - TABLE 无该 (位置,节奏) 组合 → dict.get 安全降级返回 0
+
+    目的：让低位横盘(黄金区)拿最高分，低位回调/下跌降分，高位不追涨。
     """
     current_close = q.get('close') or q.get('price') or 0
     if current_close <= 0:
         return 0
-    
+
     try:
         from utils.dao import get_db
         db = get_db()
-        # 20日窗口以锚定交易日回推（不再用 SQL CURDATE，支持历史回放）
+        # 单次查询：20日窗口内拉最近20根行（含当日），取 MIN/MAX + 近10根 change_pct
         _min_date = (datetime.strptime(_get_today(), '%Y%m%d') - timedelta(days=20)).strftime('%Y%m%d')
         cur = db.execute(
-            "SELECT MIN(low) as min_l, MAX(high) as max_h FROM stock_daily "
-            "WHERE code=%s AND trade_date >= %s",
+            "SELECT trade_date, low, high, change_pct FROM stock_daily "
+            "WHERE code=%s AND trade_date >= %s ORDER BY trade_date DESC LIMIT 20",
             (code, _min_date)
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
         db.close()
-        
-        if not row or not row['max_h'] or not row['min_l'] or row['max_h'] <= row['min_l']:
+
+        lows = [r['low'] for r in rows if r.get('low') and r['low'] > 0]
+        highs = [r['high'] for r in rows if r.get('high') and r['high'] > 0]
+        # 区间无效（数据缺失或扁平区间）现有兜底
+        if not lows or not highs or max(highs) <= min(lows):
             return 0
-        
-        pos_pct = (current_close - row['min_l']) / (row['max_h'] - row['min_l']) * 100
-        
-        if pos_pct < 30:
-            return 15
-        elif pos_pct < 60:
-            return 8
-        elif pos_pct < 85:
-            return 3
-        else:
-            return 0
+
+        min_l, max_h = min(lows), max(highs)
+        pos_pct = (current_close - min_l) / (max_h - min_l) * 100
+
+        # 位置分档
+        if   pos_pct < 30:  pos_key = '低位'
+        elif pos_pct < 60:  pos_key = '中位'
+        elif pos_pct < 85:  pos_key = '偏高'
+        else:               pos_key = '极高位'
+
+        # 涨跌节奏分档（近10日均涨幅；rhythm 缺省才内部现算）
+        if rhythm is None:
+            chg = [r['change_pct'] for r in rows[:10] if r.get('change_pct')]
+            # 数据不足/无 change_pct → 无法判节奏，走位置单因子兜底（§4.4，不误走 c）
+            if len(chg) < 1:
+                return _POSITION_FALLBACK.get(pos_key, 0)
+            avg_chg = sum(chg) / len(chg)
+            rhythm = _classify_rhythm(avg_chg)
+
+        return _POSITION_RHYTHM_TABLE.get((pos_key, rhythm), 0)
     except Exception as e:
         logger.warning(f"位置评分异常 {code}: {e}")
         return 0
@@ -874,13 +906,13 @@ def score_candidate(code: str, name: str, market: dict = None) -> Dict:
     """
     综合评分（v6.0新版，预测型）
 
-    评分结构（满分115→上限100）：
+    评分结构（v6.1 趋势满分14，总分上限100；内部满分109，见 design 待确认项）
     - 筹码结构  25分（低位/放量/沉淀）
     - 资金接力  25分（换手/封板/分时）
     - 板块环境  20分（涨停家数/合力/题材）
-    - 趋势位置  20分（均线/MA20距离/节奏）
+    - 趋势位置  14分（均线/MA20距离；v6.1 已删节奏）
     - 大盘安全  10分（大盘环境+情绪）
-    - 位置评估  +15分（20日区间低位加分，高位不加分）
+    - 位置评估  +15分（20日区间 × 涨跌节奏联合赋分）
 
     注意：收盘后从DB取今日数据，不再调新浪实时接口（避免超时）。
     位置评分独立加在总分后，仅补充不稀释其他维度权重。
@@ -1003,7 +1035,7 @@ def format_score_report(reports: list, title: str = '') -> str:
 
         dims = []
         for k, m in [('筹码结构', 25), ('资金接力', 25), ('板块环境', 20),
-                      ('趋势位置', 20), ('大盘安全', 10)]:
+                      ('趋势位置', 14), ('大盘安全', 10)]:
             v = bd.get(k, {})
             dims.append(f"{k[:2]}{v.get('score', 0)}/{m}")
 

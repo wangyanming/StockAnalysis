@@ -478,7 +478,7 @@ def format_v2_report(results: dict) -> str:
     now = datetime.now()
     lines = [f"📊 **{now.strftime('%Y-%m-%d')} 收盘选股**"]
     lines.append("")
-    lines.append("📝 **评分说明**: 筹码结构(25分)+资金接力(25分)+板块环境(20分)+趋势位置(20分)+大盘安全(10分)+位置评分(+15分)")
+    lines.append("📝 **评分说明**: 筹码结构(25分)+资金接力(25分)+板块环境(20分)+趋势位置(14分)+大盘安全(10分)+位置评分(+15分)")
     lines.append("")
 
     market = results.get('market', {})
@@ -514,7 +514,7 @@ def format_v2_report(results: dict) -> str:
         buf = [f"{emoji} **{name}({code}) — {score}分**"]
         buf.append(f"  📊 来源: {src}")
 
-        dims = [('筹码结构', '筹码', 25), ('资金接力', '接力', 25), ('板块环境', '板块', 20), ('趋势位置', '趋势', 20), ('大盘安全', '大盘', 10)]
+        dims = [('筹码结构', '筹码', 25), ('资金接力', '接力', 25), ('板块环境', '板块', 20), ('趋势位置', '趋势', 14), ('大盘安全', '大盘', 10)]
         dim_parts = [f"{label}{bd.get(key, {}).get('score', 0)}/{max_score}" for key, label, max_score in dims]
         pos_s = bd.get('位置评估', {}).get('score', 0)
         dim_parts.append(f"位置{pos_s}/15")

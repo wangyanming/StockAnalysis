@@ -690,6 +690,66 @@
 - **疑似无效可删**: 资金接力
 - **近乎常量的无区分维**: 板块环境(几乎全5)、大盘安全垫(几乎全7)
 
+## 最新变更：评分规则 v6.1 趋势位置去节奏（2026-08-12，RDAgent）
+
+**对应方案**: `project-doc/StockAnalysis/design/des-20260812-评分v6.1落地实现方案-v1.0.md`（依据定稿 des-20260812-选股评分规则v6.1-v1.0）
+
+**改动文件**:
+- `core/analyzer/scorer.py`：
+  - C1 删除 `score_trend_position` 阶段二④「近期涨跌节奏」±6 计分段（阶段二仅剩 均线排列8 + 距MA20位置6）
+  - C2 趋势封顶 `max(-10, min(14, score))`（原 min(20)）
+  - C3 `MAX_SCORES['trend_position']` 20 → 14（归一化口径 A：trend/14 × weight，weight 保持 20）
+  - C4 `score_trend_position` / `score_candidate` / `format_score_report` docstring 同步（趋势 14分、满分109→上限100）
+- `docs/选股评分规则.md`：版本历史加 v6.1 行 + 新增「趋势位置去节奏 v6.1」小节 + 「因子1近期节奏」注记更新
+
+**不改项（按方案定案）**:
+- C5 对外 `total_score` 保持 `min(100,…)` 封顶 100（满分109 仅指内部，owner 定案不放 109）
+- C6 位置评估「位置×节奏」联合表（v1.1，`_POSITION_RHYTHM_TABLE`/`_POSITION_FALLBACK`/`_classify_rhythm`）只读核对不修改
+- C7 `config/scorer_weights.json` 不动（trend weight 保持 20）
+- 分档阈值不折算（沿用 v6.0 ≥80/≥65/≥50/≥35）
+
+**待确认项（已登记 give 主人）**: 趋势 weight 是否降 14 使总分名义上限精确 109（默认不改 weight，仅改 MAX 分母）；对外封顶 100 是否放开。
+
+**验证（dev 环境，连 stock_analysis_dev / dev_app 只读）**:
+- 语法/导入 OK；`score_candidate` 对候选股可跑通 (T1/T2)
+- T4 趋势分 ≤14（本批 max=5，封顶/满分14路径单元验证 PASS：8+6=14 可达且 18 被钳至 14）
+- T7 总分 ≤100（本批 max=58）；`breakdown['趋势位置']['max']`=14
+- T3/T6 位置评估收 `rhythm=None` 内部现算，删④不影响位置取数；无任何写库
+- T5 只读 diff=0：stock_daily/daily_limit_up/daily_picks 变化均为 0
+
+**门禁**: `bash tests/check_engineering.sh` 全部通过（含 31 文件语法、DB连接、核心表、模块导入）。
+
+**边界**: 全改动在 dev（StockAnalysis-dev）；生产（StockAnalysis）未做任何改动；未 commit（等主人指示是否提交）。
+
+## 最新变更：位置评估因子联合调分（2026-08-11，RDAgent）
+
+**对应方案**: `project-doc/StockAnalysis/design/des-20260811-位置评估因子联合调分-v1.1.md`
+
+**改动文件**:
+- `core/analyzer/scorer.py`：`_score_position_in_range()` 由「按20日区间位置4档返固定分」改为「位置 × 涨跌节奏联合赋分表（0~15）」；新增 `_classify_rhythm()` helper；`score_candidate()` 第6步 pos 语义/权重/满分15/加权公式不变
+- `docs/选股评分规则.md`：同步补充「位置×涨跌节奏联合赋分」小节与联合赋分表（工程规范 §12）
+
+**关键实现**:
+- 联合赋分表（位置×节奏）低位c+15、低位b+10、低位d+5、低位a+8、低位e+2；中位c+3/b+8/d+1/a+3/e+2；偏高c+2/b+5/其余0；极高位b+2/其余0
+- 节奏数据不足（近10日无 change_pct/不足10根）→ 走位置单因子兜底（低位15/中位8/偏高3/极高位0），不误走 c 横盘（§4.4 裁决）
+- 涨跌节奏因子 a+5/b+6/c-1/d-3/e-6 **不改**（二阶段策略：先只改位置函数，暂不复用 helper 到 score_trend_position）
+- 查询由聚合 MIN/MAX 改拉最近20根行（含当日），取 MIN/MAX + 近10根 change_pct，单次轻量查询
+
+**回测 A/B 对照（方案 §6，dev 环境执行）**: `workspace/tmp_analysis/rpt-20260811-位置评估联合调分回测-v1.1.md`
+- 区间 20260513~20260807，daily_picks 候选 24292 只（剔除异常日 5/14、5/15），唯一变量=位置评估
+- 外层 B/C/D 分档命中收益：v1.1 D档均收益 +5.30% > v6.0 +5.02%，胜率 75% vs 68.5%；C档 +5.71% vs +3.56%，胜率 78.4% vs 65.7%；B档 +3.28% vs +3.09% —— 全面不劣
+- top-N 排序质量：v1.1 top20 胜率 68.4%/均收益 +4.50% vs v6.0 52.6%/+2.22%，高分票更货真价实
+- 交叉格自洽：低位+横盘 65.6%/+2.57（最高分15），极高位各格 -1.7~-2.9（不给奖励），中位+回调 40.7%/-1.67（低分1），联合表方向与收益一致
+- **综合判定**: ✅ 实验组 v1.1 优于 v6.0，建议采用
+- 注意：v1.1 D档数量 54→16，B/C/D 整体更聚焦（弱区降分导致），均收益/胜率/排序质量提升，符合「消伪冲突+聚焦有效组合」设计意图
+
+**环境与只读约束（方案 §0，已严格执行）**:
+- 全程 dev 环境（StockAnalysis-dev）开发/回测
+- 生产库 stock_analysis 用 dev_app 只读账号只读（连接池层 + `SET SESSION TRANSACTION READ ONLY` 双层），禁用 root
+- 回测脚本启动断言所连 = dev_app + production；跑后校验生产关键表行数 diff=0（stock_daily/daily_limit_up/daily_picks 均为 0）→ 只读未写
+
+**门禁**: `bash tests/check_engineering.sh` 结果见本次 RD 交付（含 PROJECT_STATE/MEMORY 同步）。
+
 ## 最新变更：集合竞价检查筛选条件调整（2026-07-28）
 - **文件修改**: `core/reporter/morning_auction_check.py`
 - **变更内容**: 将筛选条件从 `is_pick=1`（精选）调整为 `total_score>=60`（≥60分），涉及4处修改

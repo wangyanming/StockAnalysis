@@ -301,7 +301,7 @@ def render_report(data: dict) -> str:
         ms = pk.get('max_score', 0)
         ms_val = int(ms) if isinstance(ms, float) and ms == int(ms) else ms
         parts.append(f"最高分: {pk.get('max_name', '')}({ms_val}分)")
-        parts.append(f"📝 评分说明: 筹码结构(25分)+资金接力(25分)+板块环境(20分)+趋势位置(20分)+大盘安全(10分)+位置评分(+15分)")
+        parts.append(f"📝 评分说明: 筹码结构(25分)+资金接力(25分)+板块环境(20分)+趋势位置(14分)+大盘安全(10分)+位置评分(+15分)")
         
         # B/C/D 三组展示
         group_labels = {
@@ -331,7 +331,7 @@ def render_report(data: dict) -> str:
                 
                 dims = s.get('dims', {})
                 dim_str = ' | '.join(f"{k}{dims.get(k, 0)}/{max_s}"
-                                      for k, max_s in [('筹码', 25), ('接力', 25), ('板块', 20), ('趋势', 20), ('大盘', 10)]
+                                      for k, max_s in [('筹码', 25), ('接力', 25), ('板块', 20), ('趋势', 14), ('大盘', 10)]
                                       if k in dims)
                 if '位置' in dims:
                     dim_str += f" | 位置{dims['位置']}/15"
