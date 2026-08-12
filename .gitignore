@@ -52,3 +52,10 @@ closing_review_*.txt
 # 本地 DB 连接凭据（密码不进版本库）
 config/db_url.local.json
 skills/
+
+# backtest 实验代码（2026-08-12 起不进版本库）
+backtest/
+**/backtest_baseline_detail.csv
+**/daily_pick_v2_backtest.py
+**/scorer_v6_copy.py
+tests/backtest_*.py
