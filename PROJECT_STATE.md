@@ -8,6 +8,33 @@
 - **API校验**: `python3 tests/api_validation.py`
 - **数据对账**: `python3 tests/data_reconciliation.py`
 
+## 最新变更：板块环境20→12 + 大盘五档无加分 + 位置评估纳入复盘（2026-08-19，dev，未 commit）
+
+- **方案**: project-doc/StockAnalysis/design/des-20260819-板块环境与大盘安全维度改造-v1.0.md（主人终裁：A 板块方案拍板 + B 大盘五档无加分方案 + C 位置评估纳入复盘）
+- **改法（core/analyzer/scorer.py）**:
+  - **A 板块环境 20→12**：`score_sector_environment` 删 ②最高连板+3 / ③政策题材+5；家数 5 档→4 档（1→+0 / 2→+3 / 3-7→+8 / ≥8→+12，3-4/5-7 无区分度合并）；行业缺失兜底 5→0；cap/封顶 min(20)→min(12)
+  - **B 大盘安全五档无加分**：`score_market_safety` 改按 `sh_change` 数值五档分桶（≥+0.5→10 / 0~0.5→7 / -0.5~0→4 / -1.5~-0.5→2 / <-1.5→0，左闭右开，缺失兜底 0→7）；整体删除行业活跃 +3 查询块；`check_market_status` 做多阈值 >1.5 → >0.5（status 集合仍 4 档，不动 daily_pick_v2 emoji 逻辑）
+  - **满分/权重成对同步（防归一化错配，吸取 8/18 教训）**：`MAX_SCORES['sector_environment']` 20→12 + `config/scorer_weights.json` weights.sector_environment 20→12 + `_DEFAULT_WEIGHTS` 20→12；`market_safety` 满分/权重 10 不变；加权公式未动（板块贡献 1:1 直通已验证）
+  - 展示层同步：模块 docstring / score_candidate docstring / format_score_report / close_report_tpl 评分说明+维度条 / daily_pick_v2 评分说明 板块 20→12；内部满分 109→101
+- **C 位置评估纳入复盘（补展示/统计，数据已在库）**: `pick_react.py` DIM_SEGMENTS 新增 `('score_pos','位置评估',15,[(10,15,'高分(≥10)'),(5,9,'中分(5~9)'),(None,4,'低分(<5)')])`（observe_log.score_pos 已在 `_sync_observe_log` 同步 ✓）；板块 DIM_SEGMENTS 满分 20→12 分段重标定（高分≥8/中分3~7/低分<3）；`close_report_tpl.py` 删除「（位置评估暂不纳入）」；`build_react_report` SQL 本就含 score_pos，无需改
+- **不动**: 筹码结构（dev 当前为 8/18 30 格联合表状态，是否回退 v6.1 旧筹码属另项决策，des-20260819 §8 明确不在本方案范围）、资金接力、趋势位置、位置评估打分逻辑、候选池/入选阈值；backtest 脚本零改动
+- **验证（dev，连 stock_analysis_dev 只读）**: ① 五档分桶 11 个边界用例全 PASS（含 sh=±0.5 靠高档、sh=-1.5→2、缺失→7）；② 板块 4 档真实数据 20260804 验证（≥8→12/3-7→8/2→3/1→0）+ 20260609 行业 NULL 兜底 0；③ score_candidate 端到端（东晶电子 55 分，板块 12/12，贡献 1:1 直通）；④ build_react_report 维度归因含位置评估（dev 样本 236 条至 20260731，当前显示低分胜率反偏高，属旧窗口小样本现象，非代码缺陷，需 QA 用生产口径复核）；⑤ py_compile 全过
+- **门禁**: `bash tests/check_engineering.sh` 结果见下方 RD 交付
+- **未做**: 不 commit、不 push、不写库（全只读）
+
+## 最新变更：筹码结构维度「位置×量能」联合调分落地（2026-08-18，dev，未 commit）
+
+- **方案**: project-doc/StockAnalysis/design/des-20260818-筹码结构维度位置量能联合调分-v1.1.md（主人终裁版）
+- **改法（core/analyzer/scorer.py，仅 score_chip_structure() 一处）**:
+  - 合并原① 位置(10分) + ③ 筹码沉淀(5分) 为「位置×量能」15 分 30 格联合分档表（§4.3，位置保留在联合表内不删）
+  - 新增模块级常量 `_CHIP_POS_VOL_TABLE`（30 格 0~15，峰值 P10-V1=15，10 档全覆盖）+ `_SMALL_N_CELLS={'P10-V2','P10-V3'}` + 桶判定 `_chip_pos_bucket`/`_chip_vol_bucket`
+  - 量能 ratio=today_vol/max_vol(近20日)：V1<0.5 / V2 0.5~0.8 / V3≥0.8；位置 pos=(close-low_20)/(high_20-low_20)×100，10%一档（左闭右开，P100 含 90~100，按 §4.4 公式）
+  - ② 突破性放量(8分)、④ 涨停加分(2分) 保持不变；维度总分 25 不变；`MAX_SCORES['chip_structure']=25` 及 weighted 归一化公式不动
+  - 异常兜底：ratio 无法计算→vol_bucket=None→JOINT.get 返回 0；high≤low→pos_bucket=None→返回 0；K线<3→沿用旧 return 5；小样本格详情标 `(×小样本)`
+- **不动**: 其他五维度（资金/板块/趋势/大盘/位置评估 v6.1）原样保留，回测可归因到单点改动
+- **未做**: 不 commit、不 push、不写库、不跑生产回测
+- **状态**: 已落盘 + 语法通过 + preflight 通过（4/6 预检全绿）；门禁整体 GATE_EXIT=1 因两处与本改动无关的既有项：① 门禁 Item5 `from dao import get_db` 引用已删根 stub（commit af82951 移除，非本次引入）；② Item1 已由本次更新 PROJECT_STATE.md 消除
+
 ## 最新变更：v1.2 盘中盘前取数修复 + v1.3 去盘中市场汇总缓存层（2026-08-10）
 
 - **QA**: 已通过（testrep-凭证-盘中盘前取数修复-v1.2/v1.3）；pre-commit hook 认 project-doc/StockAnalysis/test/ 新路径

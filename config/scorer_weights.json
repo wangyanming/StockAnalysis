@@ -3,7 +3,7 @@
   "weights": {
     "chip_structure": 25,
     "momentum": 25,
-    "sector_environment": 20,
+    "sector_environment": 12,
     "trend_position": 20,
     "market_safety": 10,
     "position_bonus": 15,
