@@ -8,9 +8,9 @@
 评分维度（满分100）：
   1. 筹码结构（25分）— 上方有没有套牢盘？是不是低位启动？
   2. 资金接力（25分）— 换手是否健康？有没有接力气质？
-  3. 板块环境（20分）— 板块有没有合力？是不是主线？
-  4. 趋势位置（20分）— 均线排列？回调到支撑了吗？
-  5. 大盘安全垫（10分）— 明天还有多少安全空间？
+  3. 板块环境（12分）— 板块有没有合力？是不是主线？（2026-08-19 改造：20→12，删连板/题材，家数4档）
+  4. 趋势位置（14分）— 均线排列？回调到支撑了吗？（v6.1 由 20 分调整为 14 分）
+  5. 大盘安全垫（10分）— 明天还有多少安全空间？（2026-08-19 改造：五档无加分，做多阈值 +0.5%）
   风险扣分（-15分）
 
 ⚠️ 如果修改评分逻辑，必须同步更新 docs/选股评分规则.md
@@ -36,7 +36,7 @@ _WEIGHTS_FILE = os.path.join(_CONFIG_DIR, 'scorer_weights.json')
 _DEFAULT_WEIGHTS = {
     'chip_structure': 25,
     'momentum': 25,
-    'sector_environment': 20,
+    'sector_environment': 12,   # 2026-08-19：20→12，与 MAX_SCORES 成对同步（防归一化错配，见 des-20260819 §6）
     'trend_position': 20,
     'market_safety': 10,
     'position_bonus': 15,
@@ -58,8 +58,8 @@ _W = load_weights()      # 全局权重缓存
 MAX_SCORES = {
     'chip_structure': 25,
     'momentum': 25,
-    'sector_environment': 20,
-    'trend_position': 20,
+    'sector_environment': 12,   # 2026-08-19：20→12（删最高连板+3/政策题材+5，家数4档 0/+3/+8/+12，缺失兜底0）
+    'trend_position': 14,   # v6.1：20→14（删除近期涨跌节奏，阶段二仅剩 均线8+距MA20 6）
     'market_safety': 10,
 }
 
@@ -198,7 +198,7 @@ def check_market_status() -> Dict:
                 result['status'] = '谨慎'
                 result['score'] = 50
                 result['reason'] = f'跌{abs(change):.1f}%，轻仓谨慎为主'
-            elif change > 1.5:
+            elif change > 0.5:   # 2026-08-19：做多阈值 +1.5% → +0.5%（真实拐点，rpt-20260819-大盘环境区间验证 §4.1-2）
                 result['status'] = '做多'
                 result['score'] = 95
                 result['reason'] = f'涨{change:.1f}%，做多窗口期'
@@ -210,6 +210,65 @@ def check_market_status() -> Dict:
     except Exception as e:
         logger.warning(f"从 index_quotes 获取大盘失败: {e}")
     return result
+
+
+# ══════════════════════════════════════════════════════════════
+# 筹码结构：位置×量能 30 格联合分档表（des-20260818-筹码结构维度位置量能联合调分 v1.1）
+# ══════════════════════════════════════════════════════════════
+
+# 位置×量能 30 格联合赋分表（§4.3，主人终裁：位置保留在联合表内，不删位置）
+# - X 轴位置分位：(close-low_20)/(high_20-low_20)×100，10% 一档 P10..P100
+# - Y 轴量能档：V1 = today_vol/max_vol(近20日)<0.5；V2 = 0.5≤ratio<0.8；V3 = ratio≥0.8
+# - 分值 0~15，峰值 P10-V1=15（满格），10 档全覆盖
+# - P10-V2 / P10-V3 为小样本格（n<30），取保守值并标注 (×小样本)
+_CHIP_POS_VOL_TABLE = {
+    #            V1缩量(ratio<0.5)   V2温和(0.5~0.8)      V3放量(≥0.8)
+    ('P10', 'V1'): 15,   ('P10', 'V2'): 12,   ('P10', 'V3'): 7,   # 极低位
+    ('P20', 'V1'): 10,   ('P20', 'V2'): 9,    ('P20', 'V3'): 7,   # 低位
+    ('P30', 'V1'): 5,    ('P30', 'V2'): 7,    ('P30', 'V3'): 8,   # 中位
+    ('P40', 'V1'): 2,    ('P40', 'V2'): 2,    ('P40', 'V3'): 5,   # 坑底
+    ('P50', 'V1'): 2,    ('P50', 'V2'): 5,    ('P50', 'V3'): 6,   # 坑底
+    ('P60', 'V1'): 5,    ('P60', 'V2'): 6,    ('P60', 'V3'): 4,   # 中位回稳
+    ('P70', 'V1'): 8,    ('P70', 'V2'): 3,    ('P70', 'V3'): 5,   # 偏高
+    ('P80', 'V1'): 4,    ('P80', 'V2'): 5,    ('P80', 'V3'): 4,   # 偏高
+    ('P90', 'V1'): 3,    ('P90', 'V2'): 8,    ('P90', 'V3'): 4,   # 偏高
+    ('P100', 'V1'): 8,   ('P100', 'V2'): 7,   ('P100', 'V3'): 6,  # 顶格反弹
+}
+
+# 小样本格（n<30，§6 保守处理）：P10-V2=12、P10-V3=7，落地时详情标注 (×小样本)
+_SMALL_N_CELLS = {'P10-V2', 'P10-V3'}
+
+# 位置分位档 → 语义标签（仅供复盘详情展示）
+_CHIP_POS_LABEL = {
+    'P10': '极低位', 'P20': '低位',
+    'P30': '中位', 'P40': '中位坑底', 'P50': '中位坑底',
+    'P60': '中位', 'P70': '偏高', 'P80': '偏高', 'P90': '偏高',
+    'P100': '顶格',
+}
+_CHIP_VOL_LABEL = {'V1': '缩量', 'V2': '温和放量', 'V3': '放量'}
+
+
+def _chip_pos_bucket(pos: float) -> str:
+    """位置分位(%) → P 档（10% 一档，取上限包含，回测口径左闭右开 + 最末档含 100）。
+    边界：30.0 → P30，100 → P100。归一 10 格全覆盖。"""
+    if pos is None or pos < 0:
+        return None
+    if pos >= 100:
+        return 'P100'
+    bucket = int(pos // 10) * 10 + 10   # 0~9→P10, 10~19→P20, …, 90~99→P100
+    return f'P{bucket}'
+
+
+def _chip_vol_bucket(ratio: float) -> str:
+    """量能 ratio(today/max_vol近20日) → 量能档。
+    边界：ratio=0.5→V2、0.8→V3。无法计算（空/非正）返回 None。"""
+    if ratio is None or ratio < 0:
+        return None
+    if ratio < 0.5:
+        return 'V1'
+    if ratio < 0.8:
+        return 'V2'
+    return 'V3'
 
 
 # ══════════════════════════════════════════════════════════════
@@ -254,21 +313,42 @@ def score_chip_structure(code: str, name: str, q: dict) -> Tuple[int, list]:
         # 用 stock_daily 的成交量（手），新浪实时 volume 是股
         today_vol = klines[0]['volume'] if klines and klines[0].get('volume', 0) > 0 else 0
 
-        # ① 位置（10分）
-        if low_20 > 0 and price > 0 and high_20 > low_20:
-            pos = (price - low_20) / (high_20 - low_20) * 100
-            if pos < 30:
-                score += 10
-                details.append(f'低位启动(20日低点分位{pos:.0f}%)(+10)')
-            elif pos < 50:
-                score += 6
-                details.append(f'中位启动(分位{pos:.0f}%)(+6)')
-            elif pos < 75:
-                score += 3
-                details.append(f'中高位(分位{pos:.0f}%)(+3)')
+        # ① 位置×量能联合分档（15分，des v1.1 §4：位置保留在联合表内，不删位置）
+        # 位置分位 + 量能档查 30 格 JOINT 表，dict.get 兜底 0（不崩溃）
+        # 异常兜底：high≤low→pos_bucket=None→返回0；ratio无法计算→vol_bucket=None→JOINT.get返回0
+        if low_20 > 0 and price > 0:
+            pos = (price - low_20) / (high_20 - low_20) * 100 if high_20 > low_20 else None
+            pos_bucket = _chip_pos_bucket(pos) if pos is not None else None
+        else:
+            pos_bucket = None
+
+        # 量能比 ratio = today_vol / max_vol(近20日)
+        vols = [k['volume'] for k in klines if k['volume'] > 0]
+        max_vol = max(vols) if vols else 0
+        if max_vol > 0 and today_vol > 0:
+            ratio = today_vol / max_vol
+            vol_bucket = _chip_vol_bucket(ratio)
+        else:
+            ratio = None
+            vol_bucket = None
+
+        if pos_bucket is None or vol_bucket is None:
+            # 数据无法计算：dict.get 兜底返回 0，位置×量能不计数（走位置单档降级）
+            # 区间扁平(high≤low)或量能缺失时不强制给分，避免误判
+            if pos_bucket:
+                details.append(f'位置×量能[{pos_bucket}/{vol_bucket or "?"}]数据不足(+0)')
             else:
-                score -= 5
-                details.append(f'高位追涨(分位{pos:.0f}%)(-5)')
+                details.append('区间无效或数据不足(位置×量能+0)')
+        else:
+            joint_score = _CHIP_POS_VOL_TABLE.get((pos_bucket, vol_bucket), 0)
+            score += joint_score
+            cells_key = f'{pos_bucket}-{vol_bucket}'
+            small_n_tag = '(×小样本)' if cells_key in _SMALL_N_CELLS else ''
+            details.append(
+                f'位置×量能[{pos_bucket}/{vol_bucket}]{_CHIP_POS_LABEL.get(pos_bucket, "")}'
+                f'{_CHIP_VOL_LABEL.get(vol_bucket, "")} '
+                f'(分位{pos:.0f}% 量比{ratio:.2f})(+{joint_score}){small_n_tag}'
+            )
 
         # ② 突破性放量（8分）
         vols_20 = [k['volume'] for k in klines if k['volume'] > 0]
@@ -291,16 +371,6 @@ def score_chip_structure(code: str, name: str, q: dict) -> Tuple[int, list]:
         else:
             details.append('量能数据不足')
 
-        # ③ 筹码沉淀（7分）
-        vols = [k['volume'] for k in klines if k['volume'] > 0]
-        max_vol = max(vols) if vols else 0
-        if max_vol > 0 and today_vol > 0:
-            if today_vol < max_vol * 0.5:
-                score += 5
-                details.append('距前期巨量还有空间(+5)')
-            elif today_vol >= max_vol * 0.8:
-                score -= 3
-                details.append('接近前期套牢区(-3)')
 
         if is_limit_up:
             score += 2
@@ -440,10 +510,15 @@ def score_momentum(code: str, name: str, q: dict) -> Tuple[int, list]:
 
 def score_sector_environment(code: str, name: str) -> Tuple[int, list]:
     """
-    板块环境评分（20分）
+    板块环境评分（12分，2026-08-19 改造，满分 20→12）
 
     核心：板块有没有合力？是不是主线？
     数据源：daily_limit_up 涨停行业分布
+    变更（des-20260819-板块环境与大盘安全维度改造 v1.0 §3）：
+    - 删除 ②最高连板 +3（组合内负向、无区分度）
+    - 删除 ③政策题材 +5（弱负贡献，剔除后 ≥60 组合更纯）
+    - ① 涨停家数 5 档→4 档：1→+0 / 2→+3 / 3-7→+8 / ≥8→+12（原 3-4(+6)/5-7(+10) 无区分度，合并为 3-7(+8)）
+    - 行业信息缺失兜底 5→0（消除「兜底 5 > 独苗 0 ≥ 家数2档 3」分值倒挂）
     """
     score = 0
     details = []
@@ -458,65 +533,39 @@ def score_sector_environment(code: str, name: str) -> Tuple[int, list]:
             (code, today))
         if not ind_row or not ind_row['industry']:
             details.append('行业信息不足')
-            return 5, details
+            return 0, details          # 2026-08-19：兜底 5 → 0（消除分值倒挂）
 
         industry = ind_row['industry']
         cnt_row = db.fetchone('SELECT COUNT(*) as cnt FROM daily_limit_up WHERE trade_date=%s AND industry=%s AND (status IS NULL OR status != \'跌停\')',
                               (today, industry))
         industry_up_count = int(cnt_row['cnt']) if cnt_row else 0
 
-        # ① 板块涨停家数（12分）
+        # ① 板块涨停家数（12分，4 档；原 3-4(+6)/5-7(+10) 两档合并为 3-7(+8)）
         if industry_up_count >= 8:
             score += 12
             details.append(f'{industry}({industry_up_count}涨停,强合力)(+12)')
-        elif industry_up_count >= 5:
-            score += 10
-            details.append(f'{industry}({industry_up_count}涨停,有合力)(+10)')
         elif industry_up_count >= 3:
-            score += 6
-            details.append(f'{industry}({industry_up_count}涨停,有效应)(+6)')
+            score += 8
+            details.append(f'{industry}({industry_up_count}涨停,有效应)(+8)')
         elif industry_up_count >= 2:
             score += 3
             details.append(f'{industry}({industry_up_count}涨停,起步)(+3)')
         else:
-            details.append(f'{industry}(独苗{industry_up_count}只)')
+            details.append(f'{industry}(独苗{industry_up_count}只)')   # 家数 1 → +0
 
-        # ② 最高连板（3分）
-        if industry_up_count >= 3:
-            boards = db.fetchall(
-                'SELECT board_times FROM daily_limit_up WHERE trade_date=%s AND industry=%s AND (status IS NULL OR status != \'跌停\')',
-                (today, industry))
-            max_b = max(int(r['board_times'] or 1) for r in boards)
-            if max_b >= 3:
-                score += 3
-                details.append(f'最高{max_b}板(+3)')
-
-        # ③ 政策题材（5分）
-        combined = name + industry
-        for topic, keywords in [
-            ('低空经济', ['低空', 'eVTOL', '飞行器']),
-            ('AI/算力', ['AI', '算力', '大模型', '芯片']),
-            ('半导体', ['半导体', '光刻', '封装']),
-            ('机器人', ['机器人', '减速器']),
-            ('新能源', ['光伏', '锂电池', '固态电池', '氢能']),
-            ('消费', ['消费', '首发经济']),
-        ]:
-            if any(kw.lower() in combined.lower() for kw in keywords):
-                score += 5
-                details.append(f'题材:{topic}(+5)')
-                break
-        score = min(score, 20)
+        # ②③ 已删除：最高连板 +3、政策题材 +5（2026-08-19，见 rpt-20260819-板块环境因子验证-v1.0）
+        score = min(score, 12)                 # 2026-08-19：cap 20 → 12（防御性）
 
     except Exception as e:
         logger.warning(f'板块评分{code}失败: {e}')
 
-    score = max(0, min(20, score))
+    score = max(0, min(12, score))             # 2026-08-19：封顶 20 → 12
     return score, details
 
 
 def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     """
-    趋势位置评分（20分）
+    趋势位置评分（14分，v6.1：删除阶段二④近期涨跌节奏，满分 20→14）
 
     v6.0 改写：先判大方向（硬开关），再给细分评分。
 
@@ -529,7 +578,7 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
     阶段二：通过后再评分
     - 均线排列（8分）
     - 距MA20位置（6分）
-    - 近期涨跌节奏（6分）
+    （v6.1 已删除原④近期涨跌节奏 ±6 因子；满分 8+6=14）
 
     数据源：stock_daily 近30日K线
     """
@@ -663,75 +712,53 @@ def score_trend_position(code: str, name: str) -> Tuple[int, list]:
                 score += 3
                 details.append(f'跌破MA20等企稳(+3)')
 
-        # ④ 近期涨跌节奏（6分）
-        if len(klines) >= 10:
-            recent_chg = [k['change_pct'] for k in klines[:10] if k['change_pct']]
-            avg_chg = sum(recent_chg) / len(recent_chg) if recent_chg else 0
-
-            if avg_chg > 3:
-                score -= 4
-                details.append(f'连续大涨均值{avg_chg:+.1f}%(-4)')
-            elif avg_chg > 1:
-                score -= 1
-                details.append(f'小幅上涨均值{avg_chg:+.1f}%')
-            elif avg_chg > -1:
-                score += 3
-                details.append(f'横盘蓄力均值{avg_chg:+.1f}%(+3)')
-            elif avg_chg > -3:
-                score += 5
-                details.append(f'缩量回调均值{avg_chg:+.1f}%(+5)')
-            else:
-                score -= 3
-                details.append(f'持续下跌均值{avg_chg:+.1f}%(-3)')
+        # ④ v6.1: 近期涨跌节奏因子已删除（G3 去节奏定稿），避免与位置评估联合表节奏打分重复。
+        # 原 ±6（a+5/b+6/c−1/d−3/e−6）计分段整体移除；节奏分档逻辑 `_classify_rhythm`
+        # 由位置评估 `_score_position_in_range` 内部现算（rhythm=None 分支），此处不再复用。
 
     except Exception as e:
         logger.warning(f'趋势评分{code}失败: {e}')
 
-    score = max(-10, min(20, score))
+    score = max(-10, min(14, score))   # v6.1：趋势封顶 20→14（去节奏后阶段二仅剩 均线8+距MA20 6）
     return score, details
 
 
 def score_market_safety(market: dict) -> Tuple[int, list]:
     """
-    大盘安全垫评分（10分）
+    大盘安全垫评分（10分，2026-08-19 改造：五档无加分）
 
     核心：明天大盘继续跌的概率多大？
+    变更（des-20260819-板块环境与大盘安全维度改造 v1.0 §4，主人终裁五档方案）：
+    - 按 market['sh_change'] 数值五档分桶（与 status 字符串解耦，与回测分桶逐位一致）：
+        sh≥+0.5% → 10（做多）；0≤sh<+0.5% → 7（正常微涨）；-0.5%≤sh<0 → 4（微跌）；
+        -1.5%≤sh<-0.5% → 2（谨慎）；sh<-1.5% → 0（不做）
+    - 删除行业活跃 +3 加分块（恒生效常数 + cap=10 抹掉做多/正常区分，验证为有害）
+    - 边界约定左闭右开：sh=0→7、sh=±0.5→靠高档、sh=-1.5→2（方案 §9）
+    - sh_change 缺失/取数失败按默认 0 → 7 分（正常微涨）兜底
     """
     score = 0
     details = []
-    status = market.get('status', '正常')
-    sh_change = market.get('sh_change', 0)
+    sh_change = market.get('sh_change', 0) or 0   # 缺失按 0（正常微涨 7 分兜底）
 
-    if status == '做多':
+    if sh_change >= 0.5:
         score = 10
         details.append(f'做多窗口({sh_change:+.2f}%)(+10)')
-    elif status == '正常':
+    elif sh_change >= 0:
         score = 7
-        details.append(f'大盘正常({sh_change:+.2f}%)(+7)')
-    elif status == '谨慎':
-        score = 3
-        details.append(f'大盘谨慎({sh_change:+.2f}%)(+3)')
+        details.append(f'大盘微涨({sh_change:+.2f}%)(+7)')
+    elif sh_change >= -0.5:
+        score = 4
+        details.append(f'大盘微跌({sh_change:+.2f}%)(+4)')
+    elif sh_change >= -1.5:
+        score = 2
+        details.append(f'大盘谨慎({sh_change:+.2f}%)(+2)')
     else:
         # 大盘不做时仍给基础分，由其他4个维度决定总分
         score = 0
         details.append(f'大盘不宜交易({sh_change:+.2f}%)(+0)')
-        # 不直接return，继续后面的加分逻辑
 
-    # 加分：板块活跃度高
-    try:
-        from utils.dao import get_db
-        db = get_db()
-        today = _get_today()
-        cnt = db.fetchone(
-            'SELECT COUNT(DISTINCT industry) as cnt FROM daily_limit_up WHERE trade_date=%s AND (status IS NULL OR status != \'跌停\')',
-            (today,))
-        if cnt and int(cnt['cnt']) >= 5:
-            score += 3
-            details.append(f'{cnt["cnt"]}个行业有涨停(+3)')
-    except Exception:
-        pass
-
-    score = min(score, 10)
+    # 2026-08-19：行业活跃 +3 加分块已整体删除（恒生效 + 掩盖档位区分，见 rpt-20260819-大盘环境区间验证）
+    score = min(score, 10)                        # 防御 cap 10（已无加分项）
     return score, details
 
 
@@ -817,49 +844,98 @@ def build_candidate_pool(today_up: list = None) -> List[Dict]:
 # 6. 位置评分（补充维度，作为 bonus 加在总分上）
 # ══════════════════════════════════════════════════════════════
 
-def _score_position_in_range(code: str, q: dict) -> int:
+# 位置 × 涨跌节奏 联合赋分表（des-20260811-位置评估因子联合调分 v1.1 §3.2）
+# 满分15。解决「低位无脑+15」与「涨跌节奏对回调/下跌惩罚」的伪冲突。
+# 括号内为交叉格样本量（小样本≤30为保守值）。
+_POSITION_RHYTHM_TABLE = {
+    #           c横盘   b小涨   d回调   a连涨   e下跌
+    ('低位', 'c'): 15,  ('低位', 'b'): 10,  ('低位', 'd'): 5,
+    ('低位', 'a'): 8,   ('低位', 'e'): 2,
+    ('中位', 'c'): 3,   ('中位', 'b'): 8,   ('中位', 'd'): 1,
+    ('中位', 'a'): 3,   ('中位', 'e'): 2,
+    ('偏高', 'c'): 2,   ('偏高', 'b'): 5,   ('偏高', 'd'): 0,
+    ('偏高', 'a'): 0,   ('偏高', 'e'): 0,
+    ('极高位', 'c'): 0, ('极高位', 'b'): 2, ('极高位', 'd'): 0,
+    ('极高位', 'a'): 0, ('极高位', 'e'): 0,
+}
+
+# 近10日均涨幅不足/数据缺失时的位置单因子兜底分（v1.1 §4.4）
+# 位置分档阈值：<30% 低位 / 30~60% 中位 / 60~85% 偏高 / ≥85% 极高位
+_POSITION_FALLBACK = {'低位': 15, '中位': 8, '偏高': 3, '极高位': 0}
+
+
+def _classify_rhythm(avg_chg: float) -> str:
+    """近10日均涨幅 → a连涨/b小涨/c横盘/d回调/e下跌。
+    阈值与回测口径一致（des v1.1 §4.3），供位置联合赋分复用。"""
+    if avg_chg > 3:    return 'a'  # a 连续大涨
+    if avg_chg > 1:    return 'b'  # b 小幅上涨
+    if avg_chg > -1:   return 'c'  # c 横盘蓄力
+    if avg_chg > -3:   return 'd'  # d 缩量回调
+    return 'e'                       # e 持续下跌
+
+
+def _score_position_in_range(code: str, q: dict, rhythm: str = None) -> int:
     """
-    位置评分（0~15分）：判断当前价格在20日区间的位置。
-    
+    位置评估（0~15分，v1.1 细化）：位置 × 涨跌节奏 联合赋分。
+
+    背景（des-20260811-位置评估因子联合调分 v1.1）：
+    - v6.0 原逻辑按位置4档无脑加分，把「低位横盘(强)」与「低位回调(弱)」
+      混为一谈全给 +15，与涨跌节奏因子对回调/下跌的惩罚打架（伪冲突）。
+    - v1.1 改为查 位置×节奏 联合赋分表，让位置评估与涨跌节奏对齐。
+
     逻辑：
-    - 取近20日（含当日）最高价和最低价，计算当前价在区间百分位
-    - <30% 低位 → +15
-    - 30~60% 中位 → +8
-    - 60~85% 偏高 → +3
-    - >85% 极高位 → 0（不扣分，已通过风险扣分/趋势扣分惩罚）
-    
-    目的：解决"高分票都在追涨位"的问题，让低位的票获得加分补偿。
+    - 取近20根K线，计算当前价在20日区间百分位 → 位置分档（低位/中位/偏高/极高位）
+    - 取近10根 change_pct 均值 → 节奏分档（a/b/c/d/e）
+      - rhythm 参数缺省时内部现算；外部传入（如复用 score_trend_position）则直接用
+    - 按 _POSITION_RHYTHM_TABLE 查表返回 0~15 分
+      - 近10日无 change_pct / 不足10根 → 无法判节奏，走位置单因子兜底
+        （低位15/中位8/偏高3/极高位0，见 §4.4）
+      - TABLE 无该 (位置,节奏) 组合 → dict.get 安全降级返回 0
+
+    目的：让低位横盘(黄金区)拿最高分，低位回调/下跌降分，高位不追涨。
     """
     current_close = q.get('close') or q.get('price') or 0
     if current_close <= 0:
         return 0
-    
+
     try:
         from utils.dao import get_db
         db = get_db()
-        # 20日窗口以锚定交易日回推（不再用 SQL CURDATE，支持历史回放）
+        # 单次查询：20日窗口内拉最近20根行（含当日），取 MIN/MAX + 近10根 change_pct
         _min_date = (datetime.strptime(_get_today(), '%Y%m%d') - timedelta(days=20)).strftime('%Y%m%d')
         cur = db.execute(
-            "SELECT MIN(low) as min_l, MAX(high) as max_h FROM stock_daily "
-            "WHERE code=%s AND trade_date >= %s",
+            "SELECT trade_date, low, high, change_pct FROM stock_daily "
+            "WHERE code=%s AND trade_date >= %s ORDER BY trade_date DESC LIMIT 20",
             (code, _min_date)
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
         db.close()
-        
-        if not row or not row['max_h'] or not row['min_l'] or row['max_h'] <= row['min_l']:
+
+        lows = [r['low'] for r in rows if r.get('low') and r['low'] > 0]
+        highs = [r['high'] for r in rows if r.get('high') and r['high'] > 0]
+        # 区间无效（数据缺失或扁平区间）现有兜底
+        if not lows or not highs or max(highs) <= min(lows):
             return 0
-        
-        pos_pct = (current_close - row['min_l']) / (row['max_h'] - row['min_l']) * 100
-        
-        if pos_pct < 30:
-            return 15
-        elif pos_pct < 60:
-            return 8
-        elif pos_pct < 85:
-            return 3
-        else:
-            return 0
+
+        min_l, max_h = min(lows), max(highs)
+        pos_pct = (current_close - min_l) / (max_h - min_l) * 100
+
+        # 位置分档
+        if   pos_pct < 30:  pos_key = '低位'
+        elif pos_pct < 60:  pos_key = '中位'
+        elif pos_pct < 85:  pos_key = '偏高'
+        else:               pos_key = '极高位'
+
+        # 涨跌节奏分档（近10日均涨幅；rhythm 缺省才内部现算）
+        if rhythm is None:
+            chg = [r['change_pct'] for r in rows[:10] if r.get('change_pct')]
+            # 数据不足/无 change_pct → 无法判节奏，走位置单因子兜底（§4.4，不误走 c）
+            if len(chg) < 1:
+                return _POSITION_FALLBACK.get(pos_key, 0)
+            avg_chg = sum(chg) / len(chg)
+            rhythm = _classify_rhythm(avg_chg)
+
+        return _POSITION_RHYTHM_TABLE.get((pos_key, rhythm), 0)
     except Exception as e:
         logger.warning(f"位置评分异常 {code}: {e}")
         return 0
@@ -874,13 +950,13 @@ def score_candidate(code: str, name: str, market: dict = None) -> Dict:
     """
     综合评分（v6.0新版，预测型）
 
-    评分结构（满分115→上限100）：
+    评分结构（v6.2 板块环境 12 分/大盘五档，总分上限100；内部满分101，见 design des-20260819）
     - 筹码结构  25分（低位/放量/沉淀）
     - 资金接力  25分（换手/封板/分时）
-    - 板块环境  20分（涨停家数/合力/题材）
-    - 趋势位置  20分（均线/MA20距离/节奏）
-    - 大盘安全  10分（大盘环境+情绪）
-    - 位置评估  +15分（20日区间低位加分，高位不加分）
+    - 板块环境  12分（涨停家数4档 0/+3/+8/+12，2026-08-19 删连板/题材）
+    - 趋势位置  14分（均线/MA20距离；v6.1 已删节奏）
+    - 大盘安全  10分（sh_change 五档无加分，做多阈值 +0.5%）
+    - 位置评估  +15分（20日区间 × 涨跌节奏联合赋分）
 
     注意：收盘后从DB取今日数据，不再调新浪实时接口（避免超时）。
     位置评分独立加在总分后，仅补充不稀释其他维度权重。
@@ -1002,8 +1078,8 @@ def format_score_report(reports: list, title: str = '') -> str:
         bd = r.get('breakdown', {})
 
         dims = []
-        for k, m in [('筹码结构', 25), ('资金接力', 25), ('板块环境', 20),
-                      ('趋势位置', 20), ('大盘安全', 10)]:
+        for k, m in [('筹码结构', 25), ('资金接力', 25), ('板块环境', 12),   # 2026-08-19：板块满分 20→12
+                      ('趋势位置', 14), ('大盘安全', 10)]:
             v = bd.get(k, {})
             dims.append(f"{k[:2]}{v.get('score', 0)}/{m}")
 
